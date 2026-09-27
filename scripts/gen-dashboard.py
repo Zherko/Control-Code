@@ -641,8 +641,8 @@ git_html_rows = "".join(f"<tr><td title='{html.escape(p[4])}'>{html.escape(p[0])
 # calendario se pinta en JS (estilo Pomodoro); no hay cal estático
 
 # --- SOCIAL MODULE START (compartimentado: borrar este bloque + TPL Social para quitar) ---
-SUPA_DB_ID = "db28"  # panel-social-v2 (owner social, key publica limitada)
-SOCIAL_KEY = "sd_qKMPbKz3p36CZpBoVO-sOOheH0WdyzCq"  # key del usuario social (1GB, solo peers+messages) — no es admin
+SUPA_DB_ID = "db27"  # panel-control-social (owner admin) — todo admin como pide el usuario
+SOCIAL_KEY = "sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY"  # admin key directa
 social_self = {}
 social_peers = []
 social_peers_html = ""
@@ -1130,7 +1130,7 @@ document.addEventListener('click',function(e){ var b=e.target.closest('.info-btn
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(); });
 // --- SOCIAL MODULE JS (compartimentado) — solo botón Conectar + chat al pinchar peer ---
 (function(){
-  var SOCIAL_KEY="sd_qKMPbKz3p36CZpBoVO-sOOheH0WdyzCq", DB="db28";
+  var SOCIAL_KEY="sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY", DB="db27";
   var connBtn=document.getElementById('socialConnect'), disBtn=document.getElementById('socialDisconnect'), statusEl=document.getElementById('socialStatus');
   if(!connBtn) return;
   function fmtTok(n){ if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return ''+n; }

@@ -4,9 +4,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DB = os.path.expanduser(r"~\.local\share\opencode\opencode.db")
 CONF = os.path.expanduser(r"~\.config\opencode\opencode.json")
 SUPA_URL = "https://pro-serv.tail9f39ff.ts.net"
-DB_ID = "db28"  # panel-social-v2 (owner social, key publica sd_qKMP...)
+DB_ID = "db27"  # panel-control-social (admin)
 TABLE = "peers"
-SOCIAL_KEY = "sd_qKMPbKz3p36CZpBoVO-sOOheH0WdyzCq"
+SOCIAL_KEY = "sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY"  # admin directa
 
 def get_key():
     # usa key publica social si no hay admin key
