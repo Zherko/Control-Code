@@ -532,6 +532,9 @@ try:
         f"<div class='card' style='border-left:4px solid #d29922'><h3>⚠ Vigila</h3><div style='font-weight:700;margin:6px 0'>{html.escape(vigila_msg)}</div><div class='small'>{html.escape(vigila_detail)}</div></div>"
         f"<div class='card' style='border-left:4px solid #f85149'><h3>✕ Corta</h3><div style='font-weight:700;margin:6px 0'>{html.escape(corta_msg)}</div><div class='small'>{html.escape(corta_detail)}</div></div>"
         f"</div>"
+        f"<div style='text-align:center;margin:8px 0'><button id='btn-analizar' onclick=\"analizarMargen()\" style='border:1px solid var(--line);background:transparent;padding:8px 14px;border-radius:20px;cursor:pointer;color:var(--acc)'>Analizar margen con LLM →</button></div>"
+        f"<div id='analisis-detalle' class='panel' style='display:none;margin-top:8px'></div>"
+        f"<script>function analizarMargen(){{var d=document.getElementById('analisis-detalle'); if(!d) return; var html='<b>Top margen mejora $/k 30d</b><br>'; var projs=(D.ranges['d30']&&D.ranges['d30'].proj)||[]; var list=[]; for(var i=0;i<projs.length;i++){{var p=projs[i]; var churn=(PROJ_CHURN[p[0]]&&PROJ_CHURN[p[0]]['d30'])||0; if(!churn) continue; var eff=p[2]/(churn/1000); list.push([p[0],eff,p[2],churn]);}} list.sort(function(a,b){{return b[1]-a[1];}}); for(var i=0;i<Math.min(3,list.length);i++){{var r=list[i]; html+='• '+r[0]+': $'+r[1].toFixed(2)+'/k ('+r[3]+' líneas, $'+r[2].toFixed(2)+')<br>';}} if(!list.length) html+='Sin churn 30d para ranking<br>'; html+='<br><span class=\"small\">Determinista. Para diagnóstico profundo pega en opencode: <code>opencode --agent Enjambre \"analiza '+ (list[0] ? list[0][0] : 'proyecto') +' y propone 1 ajuste para bajar $/k\"</code></span>'; d.innerHTML=html; d.style.display='block';}}</script>"
     )
 except Exception as e:
     inicio_coaching_html = f"<p class='small'>coaching no disponible: {html.escape(str(e)[:60])}</p>"
