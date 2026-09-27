@@ -539,6 +539,44 @@ try:
 except Exception as e:
     inicio_coaching_html = f"<p class='small'>coaching no disponible: {html.escape(str(e)[:60])}</p>"
 
+# --- PENDING MODULE START (compartimentado: borrar este bloque + HTML panel para quitar) ---
+PENDING_PATH = os.path.join(ROOT, ".opencode", "pending_tasks.json")
+pending_tasks = []
+pending_rows_html = ""
+pending_n = 0
+try:
+    if os.path.exists(PENDING_PATH):
+        pending_tasks = json.load(open(PENDING_PATH, encoding="utf-8-sig"))
+        if not isinstance(pending_tasks, list):
+            pending_tasks = []
+except Exception:
+    pending_tasks = []
+try:
+    pending_n = len(pending_tasks)
+    if not pending_tasks:
+        pending_rows_html = "<tr><td colspan=4 class='dim'>sin pendientes — añade con <code>Panel Control::2026-09-27:: asunto</code> en <code>.opencode/pending_tasks.json</code> (ver <code>.opencode/skills/skill_pending/SKILL.md</code>)</td></tr>"
+    else:
+        # orden: open primero, luego por fecha desc
+        def _pk(x):
+            return (0 if x.get("status","open")=="open" else 1, x.get("date",""))
+        pending_tasks_sorted = sorted(pending_tasks, key=_pk)
+        rows = []
+        for t in pending_tasks_sorted[:20]:
+            proj = html.escape(str(t.get("project","?"))[:30])
+            date = html.escape(str(t.get("date",""))[:12])
+            subj = html.escape(str(t.get("subject",""))[:80])
+            desc = html.escape(str(t.get("desc",""))[:160])
+            status = t.get("status","open")
+            pill = "grn" if status=="done" else "dim"
+            title = f"{proj}::{date}:: {subj}"
+            rows.append(f"<tr><td title='{html.escape(desc)}'><b>{title}</b><br><span class='dim' style='font-size:12px'>{desc}</span></td><td><span class='pill {pill}'>{status}</span></td><td class='dim'>{date}</td><td class='dim'>{proj}</td></tr>")
+        pending_rows_html = "".join(rows)
+        if pending_n > 20:
+            pending_rows_html += f"<tr><td colspan=4 class='dim'>+{pending_n-20} más en .opencode/pending_tasks.json</td></tr>"
+except Exception as e:
+    pending_rows_html = f"<tr><td colspan=4>err {html.escape(str(e)[:40])}</td></tr>"
+# --- PENDING MODULE END ---
+
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
 payload = {
@@ -723,6 +761,9 @@ __INICIO_COACHING__
 <div id="view-tareas" class="view">
 <h2>Goals (__NGOALS__) <button class="info-btn" data-info="goals">i</button></h2><div class="panel"><table><tr><th>ID</th><th>Titulo</th><th>Criteria</th><th>Estado</th></tr>__GOALS__</table></div>
 <h2>Crons (__NCRONS__) <button class="info-btn" data-info="crons">i</button></h2><div class="panel"><table><tr><th>Nombre</th><th>Schedule</th><th>Enabled</th><th>Ultimo run</th></tr>__CRONS__</table></div>
+<!-- PENDING MODULE START (compartimentado: borrar este bloque para quitar) -->
+<h2>Pendientes — cuaderno agentes (__NPENDING__) <button class="info-btn" data-info="pendientes">i</button></h2><div class="panel"><table><tr><th>Tarea (Nombre proyecto::fecha::asunto)</th><th>Estado</th><th>Fecha</th><th>Proyecto</th></tr>__PENDING_ROWS__</table><p class="small">Agentes escriben aquí con <code>Nombre proyecto::fecha::asunto</code> + descripción. Fichero: <code>.opencode/pending_tasks.json</code> · Skill: <code>skill_pending</code> · Quita este módulo borrando el bloque PENDING en <code>gen-dashboard.py</code> y TPL.</p></div>
+<!-- PENDING MODULE END -->
 <div class="panel"><div class="cal-nav"><button id="calPrev">‹</button><b id="calLabel">—</b><button id="calNext">›</button></div><div id="calGrid" class="cal-grid"></div><div id="calDetail" class="cal-detail"><span class="hint">Toca un dia para ver su resumen.</span></div><p class="small">Fondo azulado = dia con gasto · invertido = hoy/seleccion · atenuado = futuro <button class="info-btn" data-info="calendario" style="vertical-align:middle">i</button></p></div>
 </div>
 
@@ -1002,7 +1043,8 @@ var INFO={
   skills:{t:'Skills',h:'<p>247 skills globales + proyecto. Filtra escribiendo. Scope global = disponible siempre, project = solo aquí.</p>'},
   goals:{t:'Goals',h:'<p>Objetivos activos/archivados en <code>.opencode/goals</code>. Criterio = cómo se da por cumplido.</p>'},
   crons:{t:'Crons',h:'<p>Tareas programadas en <code>.opencode/cron/jobs.json</code>. Si ves 0, crea uno con <code>/skill_cron</code>.</p>'},
-  calendario:{t:'Calendario',h:'<p>Vista mensual estilo Pomodoro. Fondo azulado = día con gasto, invertido = hoy/selección, atenuado = futuro.</p><p>Pincha un día para ver su detalle de proyecto/modelo y coste/msg de ese día.</p>'}
+   calendario:{t:'Calendario',h:'<p>Vista mensual estilo Pomodoro. Fondo azulado = día con gasto, invertido = hoy/selección, atenuado = futuro.</p><p>Pincha un día para ver su detalle de proyecto/modelo y coste/msg de ese día.</p>'},
+  pendientes:{t:'Pendientes — cuaderno agentes',h:'<p><b>Formato título:</b> <code>Nombre proyecto::fecha::asunto</code> + descripción dentro.</p><p>Agentes añaden filas a <code>.opencode/pending_tasks.json</code> cuando detectan deuda/bloqueo o tú les dices <em>apúntalo</em>. Aparece aquí tras regenerar.</p><p>Skill: <code>skill_pending</code>. Compartimentado: borra el fichero + skill + bloque PENDING para quitarlo.</p>'}
 };
 function openInfo(k){ var d=INFO[k]; if(!d) return; document.getElementById('infoTitle').textContent=d.t; document.getElementById('infoBody').innerHTML=d.h; document.getElementById('infoModal').classList.add('on'); }
 function closeInfo(){ document.getElementById('infoModal').classList.remove('on'); }
@@ -1017,6 +1059,7 @@ doc = doc.replace("__GOALS__", goal_rows).replace("__CRONS__", cron_rows)
 doc = doc.replace("__NGOALS__", str(len(goals))).replace("__NCRONS__", str(len(crons)))
 doc = doc.replace("__AGENTS__", agent_rows).replace("__MCPS__", mcp_rows).replace("__SKILLS__", skill_tr + skill_more_row)
 doc = doc.replace("__NAGENTS__", str(len(agents))).replace("__NSKILLS__", str(len(skill_rows))).replace("__NMCP__", str(len(mcps)))
+doc = doc.replace("__PENDING_ROWS__", pending_rows_html).replace("__NPENDING__", str(pending_n))
 doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
 doc = doc.replace("__EVO_DATA__", inicio_chart_json)
 doc = doc.replace("__PROJ_CHURN__", proj_churn_json)
