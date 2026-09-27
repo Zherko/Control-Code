@@ -276,22 +276,25 @@ try:
         f"</div>"
     )
     # serie histórica 30d para gráfica fija (ancho 100%, sin scroll)
-    # team eff por día + top4 autores
-    top_authors = [a for a,_ in author_commits.most_common(4)]
+    # unificado: solo zherko (=equipo si trabajas solo), sin bots
+    top_authors = ["zherko"] if "zherko" in author_commits else []
     hist = []
-    for d in reversed(d30):  # cronológico izq->der
+    solo = (len([k for k in author_commits if k=="zherko"]) > 0)  # tu eres el equipo
+    for d in reversed(d30):
         c = daily.get(d, {}).get("c", 0); net = day_net.get(d, 0)
         team_e = (c / (net/1000)) if net > 0 else None
-        row = {"d": d[5:], "team": round(team_e,2) if team_e is not None else None}
-        # eff por autor con reparto equitativo del coste del día
-        n_auth = len(day_authors.get(d, [])) or 1
-        for a in top_authors:
-            l = author_daily.get(a, {}).get(d, 0)
-            if l:
-                ca = c / n_auth
-                row[a] = round(ca / (l/1000),2) if l != 0 else None
-            else:
-                row[a] = None
+        if solo:
+            row = {"d": d[5:], "zherko": round(team_e,2) if team_e is not None else None}
+        else:
+            row = {"d": d[5:], "team": round(team_e,2) if team_e is not None else None}
+            n_auth = len(day_authors.get(d, [])) or 1
+            for a in top_authors:
+                l = author_daily.get(a, {}).get(d, 0)
+                if l:
+                    ca = c / n_auth
+                    row[a] = round(ca / (l/1000),2) if l != 0 else None
+                else:
+                    row[a] = None
         hist.append(row)
     inicio_chart_json = json.dumps(hist, ensure_ascii=False)
     # tabla por autor 30d
@@ -641,20 +644,21 @@ function renderEvo(mode){
   if(!c) return;
   var data=EVO||[];
   if(mode==='90'){
-    // agregar por semana (7d) para ancho fijo
-    var wk=[], cur=null;
+    var k0 = (data[0] && Object.keys(data[0]).find(function(k){return k!=='d';})) || 'team';
+    var wk=[];
     for(var i=0;i<data.length;i++){
-      var idx=Math.floor(i/7); if(!wk[idx]) wk[idx]={d:'S'+(idx+1),team:0,n:0};
-      if(data[i].team!=null){ wk[idx].team+=data[i].team; wk[idx].n++; }
+      var idx=Math.floor(i/7); if(!wk[idx]){ wk[idx]={d:'S'+(idx+1)}; wk[idx][k0]=0; wk[idx].n=0; }
+      if(data[i][k0]!=null){ wk[idx][k0]+=data[i][k0]; wk[idx].n++; }
       wk[idx].d=data[i].d;
     }
-    data=wk.map(function(w){ return {d:w.d, team: w.n? +(w.team/w.n).toFixed(2): null}; });
+    data=wk.map(function(w){ var o={d:w.d}; o[k0]= w.n? +(w[k0]/w.n).toFixed(2): null; return o; });
   }
-  var vals=[]; for(var i=0;i<data.length;i++){ if(data[i].team!=null) vals.push(data[i].team); }
-  // autores top
-  var authors=[]; if(EVO&&EVO[0]){ for(var k in EVO[0]) if(k!=='d'&&k!=='team') authors.push(k); }
-  authors=authors.slice(0,4);
-  for(var a=0;a<authors.length;a++){ for(var i=0;i<EVO.length;i++){ var v=EVO[i][authors[a]]; if(v!=null) vals.push(v); } }
+  var keys=[]; if(data[0]) for(var k in data[0]) if(k!=='d') keys.push(k);
+  var vals=[]; for(var i=0;i<data.length;i++){ for(var ki=0;ki<keys.length;ki++){ var v=data[i][keys[ki]]; if(v!=null) vals.push(v); } }
+  // autores top (si solo zherko, keys será ["zherko"])
+  var authors=[]; if(EVO&&EVO[0]){ for(var k in EVO[0]) if(k!=='d') authors.push(k); }
+  // en modo solo, authors es ["zherko"], lo tratamos como principal
+  if(authors.length===1 && authors[0]==='zherko'){ /* solo tú = usa ese key */ }
   if(!vals.length){ c.innerHTML='<p class="small" style="padding:40px;text-align:center">sin datos git 30d — haz commits para ver evolución</p>'; if(leg) leg.innerHTML=''; return; }
   var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals);
   if(mn===mx){ mn-=1; mx+=1; }
@@ -676,14 +680,22 @@ function renderEvo(mode){
     if(!d) return '';
     return '<path d="'+d.trim()+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   }
-  svg+=pathFor('team', COLORS[0]);
-  for(var ai=0;ai<authors.length;ai++){ svg+=pathFor(authors[ai], COLORS[(ai+1)%COLORS.length]); }
-  // dots team
-  for(var i=0;i<data.length;i++){ var v=data[i].team; if(v==null) continue; svg+='<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3" fill="'+COLORS[0]+'" stroke="#0d1117" stroke-width="1"><title>'+data[i].d+': $'+v+'/k</title></circle>'; }
+  // dibuja: si solo zherko, una sola línea (evita duplicado Equipo/zherko)
+  if(keys.length===1){
+    svg+=pathFor(keys[0], COLORS[0]);
+    for(var i=0;i<data.length;i++){ var v=data[i][keys[0]]; if(v==null) continue; svg+='<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3" fill="'+COLORS[0]+'" stroke="#0d1117" stroke-width="1"><title>'+data[i].d+': $'+v+'/k</title></circle>'; }
+  } else {
+    svg+=pathFor('team', COLORS[0]);
+    for(var ai=0;ai<authors.length;ai++){ if(authors[ai]==='team') continue; svg+=pathFor(authors[ai], COLORS[(ai+1)%COLORS.length]); }
+    for(var i=0;i<data.length;i++){ var v=data[i].team; if(v==null) continue; svg+='<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3" fill="'+COLORS[0]+'" stroke="#0d1117" stroke-width="1"><title>'+data[i].d+': $'+v+'/k</title></circle>'; }
+  }
   svg+='</svg>';
   c.innerHTML=svg;
   if(leg){
-    var html='<span><i style="background:'+COLORS[0]+'"></i>Equipo</span>';
+    var html='';
+    if(keys.length===1 && keys[0]==='zherko'){ html='<span><i style="background:'+COLORS[0]+'"></i>zherko (equipo)</span>'; }
+    else if(keys.length===1){ html='<span><i style="background:'+COLORS[0]+'"></i>'+keys[0]+'</span>'; }
+    else { html='<span><i style="background:'+COLORS[0]+'"></i>Equipo</span>';
     for(var ai=0;ai<authors.length;ai++){ html+='<span><i style="background:'+COLORS[(ai+1)%COLORS.length]+'"></i>'+authors[ai]+'</span>'; }
     leg.innerHTML=html;
   }
