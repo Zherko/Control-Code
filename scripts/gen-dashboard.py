@@ -446,6 +446,8 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 .evo-legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;font-size:12px;color:var(--dim)}
 .evo-legend span{display:inline-flex;align-items:center;gap:6px}
 .evo-legend i{width:12px;height:3px;border-radius:2px;display:inline-block}
+.evo-tip{position:absolute;top:0;left:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--txt);pointer-events:none;display:none;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.5);transform:translate(-50%,-110%)}
+.evo-tip b{color:var(--txt)}
 .info-btn{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:11px;line-height:16px;text-align:center;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin-left:8px;vertical-align:middle}
 .info-btn:hover{border-color:var(--acc);color:var(--acc)}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:99;padding:20px}
@@ -698,6 +700,24 @@ function renderEvo(mode){
   }
   svg+='</svg>';
   c.innerHTML=svg;
+  // tooltip al pasar ratón: valor exacto
+  (function(){
+    var tip=document.getElementById('evoTip'); if(!tip){ tip=document.createElement('div'); tip.id='evoTip'; tip.className='evo-tip'; c.appendChild(tip); }
+    var svgEl=c.querySelector('svg'); if(!svgEl) return;
+    svgEl.addEventListener('mousemove', function(e){
+      var r=svgEl.getBoundingClientRect(); var mX=e.clientX-r.left;
+      var curW=c.clientWidth||600, curPl=36, curPr=12, curStep=(curW-curPl-curPr)/Math.max(data.length-1,1);
+      var idx=Math.round((mX-curPl)/curStep); if(idx<0) idx=0; if(idx>=data.length) idx=data.length-1;
+      var best=idx; if(data[idx][keys[0]]==null){ var bd=1e9; for(var d=0;d<data.length;d++){ var v=data[d][keys[0]]; if(v==null) continue; var dist=Math.abs(d-idx); if(dist<bd){ bd=dist; best=d; } } }
+      var rec=data[best], val=rec?rec[keys[0]]:null;
+      if(val==null){ tip.style.display='none'; return; }
+      tip.innerHTML='<b>'+rec.d+'</b> · $'+val.toFixed(2)+'/k';
+      tip.style.left=(curPl+best*curStep)+'px';
+      var ty= pt+(mx-val)/(mx-mn)*(H-pt-pb);
+      tip.style.top=ty+'px'; tip.style.display='block';
+    });
+    svgEl.addEventListener('mouseleave', function(){ tip.style.display='none'; });
+  })();
   if(leg){
     var html='';
     if(keys.length===1 && keys[0]==='zherko'){ html='<span><i style="background:'+COLORS[0]+'"></i>zherko (equipo)</span>'; }
