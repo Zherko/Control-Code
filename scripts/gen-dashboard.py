@@ -197,6 +197,127 @@ try:
 except Exception as e:
     git_rows=[("err",0,0,0,str(e)[:40])]
 
+# --- Inicio: eficiencia $/k neto (local, sin API, ponytail: heurística coste por autor = C_día / nº autores activos ese día)
+inicio_cards_html = ""
+inicio_chart_json = "[]"
+inicio_author_rows = ""
+inicio_team_eff = 0
+try:
+    # reutilizar paths ya descubiertos, si no los hay re-derívamos rápido
+    try:
+        all_paths = sorted(paths)[:14]
+    except NameError:
+        all_paths = []
+        try:
+            con_tmp = sqlite3.connect(os.path.expanduser("~/.local/share/opencode/opencode.db"))
+            cur_tmp = con_tmp.cursor()
+            cur_tmp.execute("SELECT id, worktree FROM project")
+            p2w_tmp = dict(cur_tmp.fetchall())
+            cur_tmp.execute("SELECT id, project_id FROM session")
+            s2p_tmp = dict(cur_tmp.fetchall())
+            cur_tmp.execute("SELECT session_id, data FROM message WHERE json_extract(data,'$.role')='assistant'")
+            s = set()
+            for sid, d in cur_tmp.fetchall():
+                try:
+                    o = json.loads(d); wt = p2w_tmp.get(s2p_tmp.get(sid, ""), ""); cwd = (o.get("path") or {}).get("cwd") or wt
+                    if cwd: s.add(cwd)
+                except: pass
+            con_tmp.close()
+            all_paths = sorted(s)[:14]
+        except: all_paths = []
+    import collections
+    author_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> net
+    author_commits = collections.Counter()
+    author_add = collections.Counter()
+    author_del = collections.Counter()
+    author_display = {}  # lower -> display original
+    day_authors = collections.defaultdict(set)  # day -> set(lower)
+    day_net = collections.Counter()
+    # parse git log por proyecto últimos 90d
+    for p in all_paths:
+        if not os.path.isdir(os.path.join(p, ".git")): continue
+        try:
+            out = subprocess.check_output(["git","-C",p,"log","--all","--since=90 days","--pretty=format:%aN%x1f%ct","--numstat"], text=True, stderr=subprocess.DEVNULL, errors="ignore")
+        except: continue
+        cur_author = cur_day = cur_key = None
+        for line in out.splitlines():
+            if "\x1f" in line:
+                parts = line.split("\x1f")
+                disp = parts[0].strip() or "unknown"; cur_key = disp.lower()
+                cur_author = disp
+                author_display.setdefault(cur_key, disp)
+                try: cur_day = datetime.datetime.fromtimestamp(int(parts[1])).strftime("%Y-%m-%d")
+                except: cur_day = None
+                if cur_day: author_commits[cur_key] += 1; day_authors[cur_day].add(cur_key)
+                continue
+            if cur_key is None or cur_day is None: continue
+            parts = line.split()
+            if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
+                a, d = int(parts[0]), int(parts[1]); net = a - d
+                author_daily[cur_key][cur_day] += net
+                author_add[cur_key] += a; author_del[cur_key] += d
+                day_net[cur_day] += net
+        # también commits sin numstat (binarios) ya contados arriba, pero sin net
+    # rangos
+    d90 = [(today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(90)]
+    d30 = [(today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)]
+    total_cost_30 = sum(daily.get(d, {}).get("c", 0) for d in d30)
+    total_net_30 = sum(day_net.get(d, 0) for d in d30)
+    inicio_team_eff = (total_cost_30 / (total_net_30/1000)) if total_net_30 > 0 else 0
+    rework_team = (sum(author_del.values()) / max(sum(author_add.values()),1) * 100) if author_add else 0
+    # cards
+    def fmt_eff(v): return f"${v:.2f}/k" if v else "—"
+    inicio_cards_html = (
+        f"<div class='grid' style='grid-template-columns:repeat(4,1fr)'>"
+        f"<div class='card'><h3>Eficiencia equipo</h3><div class='big'>{fmt_eff(inicio_team_eff)}</div><div class='row'><span>coste/neto 30d</span><span>{'menor es mejor'}</span></div></div>"
+        f"<div class='card'><h3>Coste 30d</h3><div class='big'>${total_cost_30:.2f}</div><div class='row'><span>{fmt_tok(int(sum(daily.get(d,{}).get('t',0) for d in d30)))} tokens</span><span>{sum(daily.get(d,{}).get('k',0) for d in d30)} msgs</span></div></div>"
+        f"<div class='card'><h3>Impacto neto 30d</h3><div class='big'>{fmt_tok(total_net_30) if total_net_30 else '0'}</div><div class='row'><span>líneas netas git</span><span>{len(author_daily)} autores</span></div></div>"
+        f"<div class='card'><h3>Rework 30d</h3><div class='big'>{rework_team:.1f}%</div><div class='row'><span>del/add</span><span>{sum(author_del.values())}/{sum(author_add.values())}</span></div></div>"
+        f"</div>"
+    )
+    # serie histórica 30d para gráfica fija (ancho 100%, sin scroll)
+    # team eff por día + top4 autores
+    top_authors = [a for a,_ in author_commits.most_common(4)]
+    hist = []
+    for d in reversed(d30):  # cronológico izq->der
+        c = daily.get(d, {}).get("c", 0); net = day_net.get(d, 0)
+        team_e = (c / (net/1000)) if net > 0 else None
+        row = {"d": d[5:], "team": round(team_e,2) if team_e is not None else None}
+        # eff por autor con reparto equitativo del coste del día
+        n_auth = len(day_authors.get(d, [])) or 1
+        for a in top_authors:
+            l = author_daily.get(a, {}).get(d, 0)
+            if l:
+                ca = c / n_auth
+                row[a] = round(ca / (l/1000),2) if l != 0 else None
+            else:
+                row[a] = None
+        hist.append(row)
+    inicio_chart_json = json.dumps(hist, ensure_ascii=False)
+    # tabla por autor 30d
+    rows = []
+    for a in author_commits.most_common(12):
+        key = a[0]; commits = a[1]
+        net = sum(author_daily.get(key, {}).get(d,0) for d in d30)
+        add_g = author_add.get(key,0); del_g = author_del.get(key,0)
+        rework_a = min(del_g / max(add_g,1)*100, 100) if add_g else 0
+        if net < 0: rework_a = 100
+        days_active = sum(1 for d in d30 if author_daily.get(key, {}).get(d,0) != 0)
+        cost_a = sum((daily.get(d,{}).get("c",0) / max(len(day_authors.get(d,[])),1)) for d in d30 if author_daily.get(key,{}).get(d,0)!=0)
+        eff_a = (cost_a / (net/1000)) if net > 0 else 0
+        disp = author_display.get(key, key)
+        net_fmt = (f"+{fmt_tok(net)}" if net>0 else fmt_tok(net)) if net else "0"
+        rows.append((disp, net, eff_a, rework_a, commits, days_active, net_fmt))
+    rows.sort(key=lambda x: x[2] if x[2] else 999)
+    inicio_author_rows = "".join(
+        f"<tr><td>{html.escape(r[0])}</td><td class='num'>{r[6]}</td><td class='num'>{fmt_eff(r[2])}</td><td class='num'>{r[3]:.1f}%</td><td class='num'>{r[4]}</td><td class='num'>{r[5]}/30</td></tr>"
+        for r in rows
+    ) or "<tr><td colspan=6>sin datos git 30d</td></tr>"
+except Exception as e:
+    inicio_cards_html = f"<p class='small'>sin datos inicio: {html.escape(str(e)[:80])}</p>"
+    inicio_chart_json = "[]"
+    inicio_author_rows = "<tr><td colspan=6>—</td></tr>"
+
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
 payload = {
@@ -317,12 +438,28 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 .cal-detail .hint{font-size:12px;color:var(--dim)}
 .small{color:var(--dim);font-size:12px;margin:6px 0}
 .small.ghost{border:1px solid var(--line);background:transparent;color:var(--txt);border-radius:10px;padding:8px 14px;cursor:pointer}
+.evo-wrap{position:relative;width:100%;height:220px;overflow:hidden}
+.evo-wrap svg{width:100%;height:100%;display:block}
+.evo-legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;font-size:12px;color:var(--dim)}
+.evo-legend span{display:inline-flex;align-items:center;gap:6px}
+.evo-legend i{width:12px;height:3px;border-radius:2px;display:inline-block}
 </style></head><body><div class="wrap">
 <div class="top"><span class="dot"></span><h1>Centro de control</h1><label id="ar-wrap" style="display:none"><input type="checkbox" id="ar" checked></label></div>
 <p class="sub">Fuente: <code>opencode.db</code> · __MSGS__ mensajes · <code>opencode.json</code> · generado __NOW__</p>
-<div class="nav" id="nav"><button data-v="consumo" class="on">Consumo</button><button data-v="recursos">Recursos</button><button data-v="tareas">Tareas</button></div>
+<div class="nav" id="nav"><button data-v="inicio" class="on">Inicio</button><button data-v="consumo">Consumo</button><button data-v="recursos">Recursos</button><button data-v="tareas">Tareas</button></div>
 
-<div id="view-consumo" class="view on">
+<div id="view-inicio" class="view on">
+__INICIO_CARDS__
+<div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
+<button class="ghost small" data-evo="30" style="border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:20px;padding:7px 14px;cursor:pointer">30 días</button>
+<button class="ghost small" data-evo="90" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:7px 14px;cursor:pointer">90 días (semanal)</button>
+</div>
+<h2>Evolución eficiencia · $/k neto (menor es mejor)</h2><div class="panel"><div id="evoChart" class="evo-wrap"></div><div id="evoLegend" class="evo-legend"></div><p class="small">Fijo ancho 100% sin scroll. Ventana 30d por autor (coste del día repartido equitativamente entre autores activos). 90d agrega por semana.</p></div>
+<h2>Por autor · 30 días</h2><div class="panel"><table><tr><th>Autor</th><th class="num">Neto</th><th class="num">$/k neto</th><th class="num">Rework</th><th class="num">Commits</th><th class="num">Días</th></tr><tbody>__INICIO_AUTHORS__</tbody></table><p class="small">Ordenado por eficiencia ($/k menor primero). Neto = líneas +/− que se quedan. Rework = del/add. Sin API Git, solo <code>git log --numstat</code>.</p></div>
+<h2>Resumen rápido</h2><div class="panel"><p class="small">Consumo: <span id="sumConsumo">—</span> · Recursos: __NAGENTS__ agentes · __NSKILLS__ skills · Tareas: __NGOALS__ goals · __NCRONS__ crons · <a href="#" onclick="document.querySelector('[data-v=consumo]').click();return false;" style="color:var(--acc)">ir a Consumo</a></p></div>
+</div>
+
+<div id="view-consumo" class="view">
 <div class="grid">__CARDS__</div>
 <div class="tabs" id="tabs"><button data-r="total" class="on">Total</button><button data-r="d30">Ultimos 30 dias</button><button data-r="d7">Ultimos 7 dias</button><button data-r="d1">Hoy</button></div>
 <p class="rangelabel" id="rangelabel"></p>
@@ -352,6 +489,7 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 </div>
 <script>
 var D = __DATA__;
+var EVO = __EVO_DATA__;
 var SKILLS_ALL = __SKILL_JSON__;
 var NAMES = {total:"todas las fechas con datos",d30:"ultimos 30 dias",d7:"ultimos 7 dias",d1:"hoy"};
 function fmt(n){if(n>=1e9)return(n/1e9).toFixed(2)+"B";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(0)+"K";return""+n;}
@@ -483,15 +621,80 @@ if(cn) cn.onclick=function(){calM++; if(calM>11){calM=0;calY++;} var now=new Dat
 renderCal();
 var todayIsoInit=new Date().toISOString().slice(0,10);
 if(D.daily[todayIsoInit]&&D.daily[todayIsoInit].t>0){calSel=todayIsoInit; renderCal(); calDetail(todayIsoInit);}
+// resumen Inicio
+var sc=document.getElementById('sumConsumo'); if(sc&&D.ranges){ var r=D.ranges.d30; sc.textContent=fmt(r.t)+' tokens · $'+r.c.toFixed(2)+' · '+r.k+' msgs (30d)'; }
+// evolución: fija ancho 100%, sin scroll
+var COLORS=['#58a6ff','#3fb950','#f778ba','#d29922','#8b949e'];
+function renderEvo(mode){
+  var c=document.getElementById('evoChart'), leg=document.getElementById('evoLegend');
+  if(!c) return;
+  var data=EVO||[];
+  if(mode==='90'){
+    // agregar por semana (7d) para ancho fijo
+    var wk=[], cur=null;
+    for(var i=0;i<data.length;i++){
+      var idx=Math.floor(i/7); if(!wk[idx]) wk[idx]={d:'S'+(idx+1),team:0,n:0};
+      if(data[i].team!=null){ wk[idx].team+=data[i].team; wk[idx].n++; }
+      wk[idx].d=data[i].d;
+    }
+    data=wk.map(function(w){ return {d:w.d, team: w.n? +(w.team/w.n).toFixed(2): null}; });
+  }
+  var vals=[]; for(var i=0;i<data.length;i++){ if(data[i].team!=null) vals.push(data[i].team); }
+  // autores top
+  var authors=[]; if(EVO&&EVO[0]){ for(var k in EVO[0]) if(k!=='d'&&k!=='team') authors.push(k); }
+  authors=authors.slice(0,4);
+  for(var a=0;a<authors.length;a++){ for(var i=0;i<EVO.length;i++){ var v=EVO[i][authors[a]]; if(v!=null) vals.push(v); } }
+  if(!vals.length){ c.innerHTML='<p class="small" style="padding:40px;text-align:center">sin datos git 30d — haz commits para ver evolución</p>'; if(leg) leg.innerHTML=''; return; }
+  var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals);
+  if(mn===mx){ mn-=1; mx+=1; }
+  var pad= (mx-mn)*0.15; mn-=pad; mx+=pad;
+  var W=c.clientWidth||600, H=220, pl=36, pr=12, pt=12, pb=22;
+  var step=(W-pl-pr)/Math.max(data.length-1,1);
+  function x(i){ return pl + i*step; }
+  function y(v){ return pt + (mx-v)/(mx-mn)*(H-pt-pb); }
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:100%">'
+  +'<line x1="'+pl+'" y1="'+(H-pb)+'" x2="'+(W-pr)+'" y2="'+(H-pb)+'" stroke="#262c36" stroke-width="1"/>'
+  +'<line x1="'+pl+'" y1="'+pt+'" x2="'+pl+'" y2="'+(H-pb)+'" stroke="#262c36" stroke-width="1"/>';
+  // grid + labels y
+  for(var g=0;g<3;g++){ var gv=mn+(mx-mn)*g/2, gy=y(gv); svg+='<line x1="'+pl+'" y1="'+gy+'" x2="'+(W-pr)+'" y2="'+gy+'" stroke="#21262d" stroke-dasharray="4 4"/><text x="'+(pl-4)+'" y="'+(gy+3)+'" text-anchor="end" fill="#8b949e" font-size="10">$'+gv.toFixed(1)+'</text>'; }
+  // x labels cada ~5
+  for(var i=0;i<data.length;i+=Math.ceil(data.length/6)){ svg+='<text x="'+x(i)+'" y="'+(H-4)+'" text-anchor="middle" fill="#8b949e" font-size="10">'+data[i].d+'</text>'; }
+  function pathFor(key, color){
+    var d=''; var first=true;
+    for(var i=0;i<data.length;i++){ var v=data[i][key]; if(v==null) continue; var xi=x(i), yi=y(v); d+=(first?'M':'L')+xi+','+yi+' '; first=false; }
+    if(!d) return '';
+    return '<path d="'+d.trim()+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  }
+  svg+=pathFor('team', COLORS[0]);
+  for(var ai=0;ai<authors.length;ai++){ svg+=pathFor(authors[ai], COLORS[(ai+1)%COLORS.length]); }
+  // dots team
+  for(var i=0;i<data.length;i++){ var v=data[i].team; if(v==null) continue; svg+='<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3" fill="'+COLORS[0]+'" stroke="#0d1117" stroke-width="1"><title>'+data[i].d+': $'+v+'/k</title></circle>'; }
+  svg+='</svg>';
+  c.innerHTML=svg;
+  if(leg){
+    var html='<span><i style="background:'+COLORS[0]+'"></i>Equipo</span>';
+    for(var ai=0;ai<authors.length;ai++){ html+='<span><i style="background:'+COLORS[(ai+1)%COLORS.length]+'"></i>'+authors[ai]+'</span>'; }
+    leg.innerHTML=html;
+  }
+}
+renderEvo('30');
+document.querySelectorAll('[data-evo]').forEach(function(b){ b.addEventListener('click',function(){
+  document.querySelectorAll('[data-evo]').forEach(function(x){ x.style.background='transparent'; x.style.color='var(--dim)'; });
+  b.style.background='var(--panel)'; b.style.color='var(--txt)';
+  renderEvo(b.getAttribute('data-evo'));
+});});
+window.addEventListener('resize', function(){ var active=document.querySelector('[data-evo][style*="var(--panel)"]'); renderEvo(active?active.getAttribute('data-evo'):'30'); });
 </script></body></html>"""
 
 doc = TPL.replace("__MSGS__", str(msgs)).replace("__NOW__", now).replace("__CARDS__", cards_html)
+doc = doc.replace("__INICIO_CARDS__", inicio_cards_html).replace("__INICIO_AUTHORS__", inicio_author_rows)
 doc = doc.replace("__CACHE_HTML__", cache_html).replace("__TOOL_ROWS__", tool_rows).replace("__GIT_ROWS__", git_html_rows)
 doc = doc.replace("__GOALS__", goal_rows).replace("__CRONS__", cron_rows)
 doc = doc.replace("__NGOALS__", str(len(goals))).replace("__NCRONS__", str(len(crons)))
 doc = doc.replace("__AGENTS__", agent_rows).replace("__MCPS__", mcp_rows).replace("__SKILLS__", skill_tr + skill_more_row)
 doc = doc.replace("__NAGENTS__", str(len(agents))).replace("__NSKILLS__", str(len(skill_rows))).replace("__NMCP__", str(len(mcps)))
 doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
+doc = doc.replace("__EVO_DATA__", inicio_chart_json)
 doc = doc.replace("__SKILL_JSON__", json.dumps([{"id": s["id"], "scope": s["scope"], "desc": s["desc"]} for s in skill_rows], ensure_ascii=False))
 out = os.path.join(ROOT, "dashboard.html")
 open(out, "w", encoding="utf-8").write(doc)
