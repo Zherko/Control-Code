@@ -286,12 +286,12 @@ try:
         f"<div class='card'><h3>Rework 30d</h3><div class='big'>{rework_team:.1f}%</div><div class='row'><span>del/add</span><span>{sum(author_del.values())}/{sum(author_add.values())}</span></div></div>"
         f"</div>"
     )
-    # serie histórica 30d para gráfica fija (ancho 100%, sin scroll)
+    # serie histórica 90d para gráfica fija (ancho 100%, sin scroll) — 30d diario, 90d semanal
     # unificado: solo zherko (=equipo si trabajas solo), sin bots
     top_authors = ["zherko"] if "zherko" in author_commits else []
     hist = []
     solo = (len([k for k in author_commits if k=="zherko"]) > 0)  # tu eres el equipo
-    for d in reversed(d30):
+    for d in reversed(d90):
         c = daily.get(d, {}).get("c", 0); churn = day_churn.get(d, 0)
         team_e = (c / (churn/1000)) if churn > 0 else None
         if solo:
@@ -756,6 +756,9 @@ function renderEvo(mode){
       wk[idx].d=data[i].d;
     }
     data=wk.map(function(w){ var o={d:w.d}; o[k0]= w.n? +(w[k0]/w.n).toFixed(2): null; return o; });
+  } else {
+    // 30d: usa solo últimos 30 de los 90 disponibles
+    if(data.length>30) data=data.slice(-30);
   }
   var keys=[]; if(data[0]) for(var k in data[0]) if(k!=='d') keys.push(k);
   var vals=[]; for(var i=0;i<data.length;i++){ for(var ki=0;ki<keys.length;ki++){ var v=data[i][keys[ki]]; if(v!=null) vals.push(v); } }
