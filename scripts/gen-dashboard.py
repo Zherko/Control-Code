@@ -910,7 +910,26 @@ if(sf){ sf.addEventListener("input", function(){ skillRender(sf.value); }); skil
 // auto-refresh oculto pero marcado: Ctrl+F5 manual
 async function softRefresh(){ try{ if(location.protocol==='file:') { location.reload(); return; } if(document.getElementById('infoModal')?.classList.contains('on')) return; const wasAnalisis = document.getElementById('analisis-detalle')?.style.display==='block'; const scrollY = window.scrollY; const res = await fetch('dashboard.html?v='+Date.now(), {cache:'no-store'}); if(!res.ok) throw new Error('fetch '+res.status); const html = await res.text(); const mD = html.match(/var D = (\\{.*?\\});/s); const mEVO = html.match(/var EVO = (\\[.*?\\]);/s); const mPROJ = html.match(/var PROJ_CHURN = (\\{.*?\\});/s); const mMODEL = html.match(/var MODEL_CHURN = (\\{.*?\\});/s); const mAGENT = html.match(/var AGENT_CHURN = (\\{.*?\\});/s); if(mD) D = JSON.parse(mD[1]); if(mEVO) EVO = JSON.parse(mEVO[1]); if(mPROJ) PROJ_CHURN = JSON.parse(mPROJ[1]); if(mMODEL) MODEL_CHURN = JSON.parse(mMODEL[1]); if(mAGENT) AGENT_CHURN = JSON.parse(mAGENT[1]); // actualiza grids estaticos (4 cards)
     try{ const doc = new DOMParser().parseFromString(html,'text/html'); const fGrids = doc.querySelectorAll('#view-inicio > .grid'); const cGrids = document.querySelectorAll('#view-inicio > .grid'); for(let i=0;i<Math.min(fGrids.length,cGrids.length);i++) cGrids[i].innerHTML = fGrids[i].innerHTML; const fCons = doc.querySelector('#view-consumo > .grid'); const cCons = document.querySelector('#view-consumo > .grid'); if(fCons&&cCons) cCons.innerHTML = fCons.innerHTML; const fSub = doc.querySelector('.sub'); const cSub = document.querySelector('.sub'); if(fSub&&cSub) cSub.innerHTML = fSub.innerHTML; }catch(e){} const curRange = localStorage.getItem('pc_range')||'total'; const curEvo = localStorage.getItem('pc_evo')||'30'; try{ render(curRange); }catch(e){} try{ renderEvo(curEvo); }catch(e){} if(wasAnalisis){ try{ const det=document.getElementById('analisis-detalle'); if(det){ det.style.display='none'; localStorage.removeItem('pc_analisis'); } setTimeout(()=>{ try{ analizarMargen(); }catch(e){} window.scrollTo(0, scrollY); }, 150); }catch(e){} } else { window.scrollTo(0, scrollY); } }catch(e){ console.warn('softRefresh fallback reload', e); try{localStorage.setItem('pc_scroll', String(window.scrollY));}catch(e){} location.reload(); } }
-var ar=document.getElementById('ar'); if(ar){ ar.checked=true; var iv=setInterval(()=>{ softRefresh(); },30000); document.addEventListener('keydown', function(e){ if(e.ctrlKey && e.key==='F5'){ e.preventDefault(); softRefresh(); } if(e.ctrlKey && e.key.toLowerCase()==='r' && e.shiftKey){ e.preventDefault(); softRefresh(); } }); }
+var ar=document.getElementById('ar'); if(ar){ ar.checked=true;
+  let _lastMod=null, _iv=null;
+  async function tick(){
+    if(document.hidden) return;
+    if(document.getElementById('infoModal')?.classList.contains('on') || document.getElementById('chatModal')?.classList.contains('on')) return;
+    // HEAD check — si no cambió, no hace fetch pesado (saludable, no satura)
+    try{
+      const h=await fetch('dashboard.html', {method:'HEAD', cache:'no-store'});
+      const lm=h.headers.get('Last-Modified'), et=h.headers.get('ETag');
+      const cur=lm||et||'';
+      if(cur && _lastMod && cur===_lastMod) return;
+      if(cur) _lastMod=cur;
+    }catch(e){}
+    softRefresh();
+  }
+  function schedule(ms){ if(_iv) clearInterval(_iv); _iv=setInterval(tick, ms); }
+  document.addEventListener('visibilitychange', function(){ if(document.hidden){ if(_iv) clearInterval(_iv); } else { schedule(10000); tick(); }});
+  schedule(15000); // local realtime limpio: 15s visible, pausa si oculto
+  document.addEventListener('keydown', function(e){ if(e.ctrlKey && e.key==='F5'){ e.preventDefault(); softRefresh(); } if(e.ctrlKey && e.key.toLowerCase()==='r' && e.shiftKey){ e.preventDefault(); softRefresh(); } });
+}
 // ordenable 3 estados: desc -> asc -> default (fix cross-table + persist clave estable)
 function parseVal(txt){
   txt=(txt||'').trim();
