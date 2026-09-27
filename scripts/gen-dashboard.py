@@ -622,9 +622,9 @@ function render(r){
   for(j=0;j<R.mod.length;j++){var m=R.mod[j]; var mchurn=(MODEL_CHURN[m[0]]&&MODEL_CHURN[m[0]][r]!=null)?MODEL_CHURN[m[0]][r]:null; var meff=(mchurn&&mchurn>0)?"$"+(m[2]/(mchurn/1000)).toFixed(2)+"/k":"—"; mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td class='num'>"+meff+"</td><td></td></tr>";}
   for(j=0;j<R.agt.length;j++){var a=R.agt[j]; var achurn=(AGENT_CHURN[a[0]]&&AGENT_CHURN[a[0]][r]!=null)?AGENT_CHURN[a[0]][r]:null; var aeff=(achurn&&achurn>0)?"$"+(a[2]/(achurn/1000)).toFixed(2)+"/k":"—"; ah+="<tr><td><code>"+a[0]+"</code></td><td class='num'>"+fmt(a[1])+"</td><td class='num'>$"+a[2].toFixed(2)+"</td><td class='num'>"+avg(a[2],a[3])+"</td><td class='num'>"+a[3]+"</td><td class='num'>"+aeff+"</td><td></td></tr>";}
   var pe=document.getElementById("projs"), me=document.getElementById("mods"), ae=document.getElementById("agts");
-  if(pe) pe.innerHTML = ph || "<tr><td colspan=6>sin datos en este rango</td></tr>";
-  if(me) me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>";
-  if(ae) ae.innerHTML = ah || "<tr><td colspan=6>sin datos</td></tr>";
+  if(pe){ pe.innerHTML = ph || "<tr><td colspan=6>sin datos en este rango</td></tr>"; var _tp=pe.closest('table'); if(_tp) _tp._orig=null; }
+  if(me){ me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>"; var _tm=me.closest('table'); if(_tm) _tm._orig=null; }
+  if(ae){ ae.innerHTML = ah || "<tr><td colspan=6>sin datos</td></tr>"; var _ta=ae.closest('table'); if(_ta) _ta._orig=null; }
   var tp=document.getElementById("t-proj"); if(tp) tp.textContent="Por proyecto ("+label+")";
   try{localStorage.setItem('pc_range', r);}catch(e){}
   setTimeout(restoreSorts, 0);
@@ -650,7 +650,7 @@ function skillRender(q){
 if(sf){ sf.addEventListener("input", function(){ skillRender(sf.value); }); skillRender(""); }
 // auto-refresh oculto pero marcado: Ctrl+F5 manual
 var ar=document.getElementById('ar'); if(ar){ ar.checked=true; var iv=setInterval(()=>{ if(document.getElementById('infoModal')?.classList.contains('on')) return; location.reload(); },30000); document.addEventListener('keydown', function(e){ if(e.ctrlKey && e.key==='F5'){ e.preventDefault(); location.reload(); } if(e.ctrlKey && e.key.toLowerCase()==='r' && e.shiftKey){ e.preventDefault(); location.reload(); } }); }
-// ordenable 3 estados: desc -> asc -> default (fix cross-table)
+// ordenable 3 estados: desc -> asc -> default (fix cross-table + persist clave estable)
 function parseVal(txt){
   txt=(txt||'').trim();
   if(!txt) return -1;
@@ -658,8 +658,11 @@ function parseVal(txt){
   if(/[BMK]$/.test(txt)){ var n=parseFloat(txt); if(txt.endsWith('B')) return n*1e9; if(txt.endsWith('M')) return n*1e6; if(txt.endsWith('K')) return n*1e3; return n; }
   var v=parseFloat(txt.replace(/,/g,'')); return isNaN(v)? txt.toLowerCase() : v;
 }
-function saveSorts(){ try{ var tables=[...document.querySelectorAll('.panel table')]; var o={}; tables.forEach(function(t,i){ var th=[...t.querySelectorAll('th')].find(function(h){return h._sortState}); if(th){ o[i]={c:[...t.querySelectorAll('th')].indexOf(th), s:th._sortState}; } }); localStorage.setItem('pc_sorts', JSON.stringify(o)); }catch(e){} }
-function restoreSorts(){ try{ var o=JSON.parse(localStorage.getItem('pc_sorts')||'{}'); var tables=[...document.querySelectorAll('.panel table')]; for(var k in o){ var t=tables[k]; if(!t) continue; var th=t.querySelectorAll('th')[o[k].c]; if(!th) continue; for(var n=0;n<o[k].s;n++){ th.click(); } } }catch(e){} }
+function tableKey(t){ try{ var tb=t.querySelector('tbody'); var id=(tb&&tb.id)||t.id||''; if(id) return 'id:'+id; var hdr=[...t.querySelectorAll('th')].map(function(h){return h.textContent.trim().replace(/ [▲▼]$/,'');}).join('|'); var view=t.closest('.view'); var vid=view?view.id:''; return vid+'|'+hdr; }catch(e){return '';} }
+function saveSorts(){ try{ var tables=[...document.querySelectorAll('.panel table')]; var o={}; tables.forEach(function(t){ var th=[...t.querySelectorAll('th')].find(function(h){return h._sortState}); if(th){ var k=tableKey(t); if(k) o[k]={c:[...t.querySelectorAll('th')].indexOf(th), s:th._sortState}; } }); localStorage.setItem('pc_sorts_v2', JSON.stringify(o)); try{localStorage.removeItem('pc_sorts');}catch(e){} }catch(e){} }
+function restoreSorts(){ try{ var o=JSON.parse(localStorage.getItem('pc_sorts_v2')||localStorage.getItem('pc_sorts')||'{}'); var tables=[...document.querySelectorAll('.panel table')]; var map={}; tables.forEach(function(t){ map[tableKey(t)]=t; }); for(var k in o){ var t=map[k]; if(!t){ // compat indice numerico viejo
+        var idx=parseInt(k,10); if(!isNaN(idx)) t=tables[idx];
+      } if(!t) continue; var th=t.querySelectorAll('th')[o[k].c]; if(!th) continue; for(var n=0;n<o[k].s;n++){ th.click(); } } }catch(e){} }
 document.addEventListener('click', function(e){
   var th=e.target.closest('th'); if(!th) return;
   var table=th.closest('table'); if(!table || !table.closest('.panel')) return;
