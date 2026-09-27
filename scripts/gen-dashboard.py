@@ -321,6 +321,28 @@ except Exception as e:
     inicio_chart_json = "[]"
     inicio_author_rows = "<tr><td colspan=6>—</td></tr>"
 
+# neto por proyecto y rango para $/k en Consumo (local, sin API)
+proj_net = {}
+try:
+    for p in all_paths:
+        if not os.path.isdir(os.path.join(p, ".git")): continue
+        short = os.path.basename(p.rstrip("/\\")) or p
+        proj_net[short] = {}
+        for rk, since in [("d1","1 day"),("d7","7 days"),("d30","30 days"),("total",None)]:
+            try:
+                args = ["git","-C",p,"log","--numstat","--pretty=format:"]
+                if since: args.insert(3, "--since="+since)
+                ns = subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL, errors="ignore")
+                a = d = 0
+                for line in ns.splitlines():
+                    sp=line.split()
+                    if len(sp)>=2 and sp[0].isdigit(): a+=int(sp[0])
+                    if len(sp)>=2 and sp[1].isdigit(): d+=int(sp[1])
+                proj_net[short][rk] = a - d
+            except: proj_net[short][rk]=0
+except: proj_net={}
+proj_net_json = json.dumps(proj_net, ensure_ascii=False)
+
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
 payload = {
@@ -479,7 +501,7 @@ __INICIO_CARDS__
 <div class="tabs" id="tabs"><button data-r="total" class="on">Total</button><button data-r="d30">Ultimos 30 dias</button><button data-r="d7">Ultimos 7 dias</button><button data-r="d1">Hoy</button></div>
 <p class="rangelabel" id="rangelabel"></p>
 <h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
-<h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th></th></tr><tbody id="projs"></tbody></table></div>
+<h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k neto</th><th></th></tr><tbody id="projs"></tbody></table></div>
 <h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th></th></tr><tbody id="mods"></tbody></table></div>
 <h2>Herramientas & caché <button class="info-btn" data-info="tools">i</button></h2>__CACHE_HTML__<div class="panel"><table><tr><th>Herramienta</th><th class="num">Llamadas</th><th></th></tr>__TOOL_ROWS__</table><p class="small">MCPs con 0 llamadas = dead weight. Cache alto (>90%) = bien. Datos de <code>part.type=tool</code> + <code>message.tokens.cache</code>.</p></div>
 <h2>Git · últimos 7 días <button class="info-btn" data-info="git">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Commits</th><th class="num">Líneas +</th><th class="num">Líneas -</th></tr>__GIT_ROWS__</table><p class="small">Si un proyecto no es git, muestra 0. Coste por commit = coste 7d / commits.</p></div>
@@ -506,6 +528,7 @@ __INICIO_CARDS__
 <script>
 var D = __DATA__;
 var EVO = __EVO_DATA__;
+var PROJ_NET = __PROJ_NET__;
 var SKILLS_ALL = __SKILL_JSON__;
 var NAMES = {total:"todas las fechas con datos",d30:"ultimos 30 dias",d7:"ultimos 7 dias",d1:"hoy"};
 function fmt(n){if(n>=1e9)return(n/1e9).toFixed(2)+"B";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(0)+"K";return""+n;}
@@ -533,10 +556,10 @@ function render(r){
   }
   var mxp = 1, j; for(j=0;j<R.proj.length;j++){if(R.proj[j][1]>mxp)mxp=R.proj[j][1];}
   var ph="",mh="";
-  for(j=0;j<R.proj.length;j++){var p=R.proj[j];ph+="<tr><td>"+p[0]+"</td><td class='num'>"+fmt(p[1])+"</td><td class='num'>$"+p[2].toFixed(2)+"</td><td class='num'>"+avg(p[2],p[3])+"</td><td class='num'>"+p[3]+"</td><td>"+bar(p[1]/mxp*100)+"</td></tr>";}
+  for(j=0;j<R.proj.length;j++){var p=R.proj[j]; var net=(PROJ_NET[p[0]]&&PROJ_NET[p[0]][r]!=null)?PROJ_NET[p[0]][r]:null; var eff=(net&&net>0)?"$"+(p[2]/(net/1000)).toFixed(2)+"/k":"—"; ph+="<tr><td>"+p[0]+"</td><td class='num'>"+fmt(p[1])+"</td><td class='num'>$"+p[2].toFixed(2)+"</td><td class='num'>"+avg(p[2],p[3])+"</td><td class='num'>"+p[3]+"</td><td class='num'>"+eff+"</td><td>"+bar(p[1]/mxp*100)+"</td></tr>";}
   for(j=0;j<R.mod.length;j++){var m=R.mod[j];mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td></td></tr>";}
   var pe=document.getElementById("projs"), me=document.getElementById("mods");
-  if(pe) pe.innerHTML = ph || "<tr><td colspan=5>sin datos en este rango</td></tr>";
+  if(pe) pe.innerHTML = ph || "<tr><td colspan=6>sin datos en este rango</td></tr>";
   if(me) me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>";
   var tp=document.getElementById("t-proj"); if(tp) tp.textContent="Por proyecto ("+label+")";
   try{localStorage.setItem('pc_range', r);}catch(e){}
@@ -743,7 +766,7 @@ var INFO={
   evo:{t:'Evolución eficiencia',h:'<p><b>Qué ves:</b> $ por cada 1.000 líneas netas que se quedan (coste de <code>opencode.db</code> / neto de <code>git log --numstat</code>).</p><p><b>Cómo leerlo:</b> línea baja y estable = vas directo, gastas poco por lo que entregas. Pico = día con mucho coste y poco neto (muchas correcciones).</p><ul><li><b>Equipo</b> = media diaria</li><li>Top autores = reparto equitativo del coste del día</li><li>90d agrega por semana para mantener ancho fijo sin scroll</li></ul><p>Ventana 30d: no penaliza antigüedad, todos comparables.</p>'},
   autores:{t:'Por autor · 30 días',h:'<p><b>Neto</b> = líneas añadidas − borradas que sobreviven. <b>$/k</b> = tu parte del coste / neto. <b>Rework</b> = borradas/añadidas (estable &lt;20% ideal).</p><p><b>Interpreta:</b> $/k bajo + neto alto + rework bajo = eficiente. Muchos commits no implica mejor, mira neto.</p><p>100% local con <code>git log --since=30 days</code>, sin API.</p>'},
   actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
-  proyecto:{t:'Por proyecto',h:'<p>Reparto de tokens/coste por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio de cada consulta. Barra = peso relativo. Clic en cabecera para ordenar (▼/▲/default).</p>'},
+  proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k neto</b> = coste / 1.000 líneas netas git de ese proyecto/rango (menor es mejor, neto de <code>git log --numstat</code>). Barra = peso. Clic cabecera para ordenar.</p>'},
   modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p>Compara coste/msg entre modelos: un modelo barato con muchos msgs puede salir mejor que uno caro.</p>'},
   tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
   git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
@@ -769,6 +792,7 @@ doc = doc.replace("__AGENTS__", agent_rows).replace("__MCPS__", mcp_rows).replac
 doc = doc.replace("__NAGENTS__", str(len(agents))).replace("__NSKILLS__", str(len(skill_rows))).replace("__NMCP__", str(len(mcps)))
 doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
 doc = doc.replace("__EVO_DATA__", inicio_chart_json)
+doc = doc.replace("__PROJ_NET__", proj_net_json)
 doc = doc.replace("__SKILL_JSON__", json.dumps([{"id": s["id"], "scope": s["scope"], "desc": s["desc"]} for s in skill_rows], ensure_ascii=False))
 out = os.path.join(ROOT, "dashboard.html")
 open(out, "w", encoding="utf-8").write(doc)
