@@ -510,7 +510,7 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 </style></head><body><div class="wrap">
 <div class="top"><span class="dot"></span><h1>Centro de control</h1><label id="ar-wrap" style="display:none"><input type="checkbox" id="ar" checked></label></div>
 <p class="sub">Fuente: <code>opencode.db</code> · __MSGS__ mensajes · <code>opencode.json</code> · generado __NOW__</p>
-<div class="nav" id="nav"><button data-v="inicio" class="on">Inicio</button><button data-v="consumo">Consumo</button><button data-v="recursos">Recursos</button><button data-v="tareas">Tareas</button></div>
+<div class="nav" id="nav"><button data-v="inicio" class="on">Inicio</button><button data-v="consumo">Consumo</button><button data-v="plataforma">Plataforma</button><button data-v="recursos">Recursos</button><button data-v="tareas">Tareas</button></div>
 
 <div id="view-inicio" class="view on">
 __INICIO_CARDS__
@@ -530,6 +530,9 @@ __INICIO_CARDS__
 <h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
 <h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="projs"></tbody></table></div>
 <h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="mods"></tbody></table></div>
+</div>
+
+<div id="view-plataforma" class="view">
 <h2>Herramientas & caché <button class="info-btn" data-info="tools">i</button></h2>__CACHE_HTML__<div class="panel"><table><tr><th>Herramienta</th><th class="num">Llamadas</th><th></th></tr>__TOOL_ROWS__</table><p class="small">MCPs con 0 llamadas = dead weight. Cache alto (>90%) = bien. Datos de <code>part.type=tool</code> + <code>message.tokens.cache</code>.</p></div>
 <h2>Git · últimos 7 días <button class="info-btn" data-info="git">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Commits</th><th class="num">Líneas +</th><th class="num">Líneas -</th></tr>__GIT_ROWS__</table><p class="small">Si un proyecto no es git, muestra 0. Coste por commit = coste 7d / commits.</p></div>
 </div>
