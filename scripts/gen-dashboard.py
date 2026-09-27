@@ -762,7 +762,7 @@ __INICIO_COACHING__
 <h2>Goals (__NGOALS__) <button class="info-btn" data-info="goals">i</button></h2><div class="panel"><table><tr><th>ID</th><th>Titulo</th><th>Criteria</th><th>Estado</th></tr>__GOALS__</table></div>
 <h2>Crons (__NCRONS__) <button class="info-btn" data-info="crons">i</button></h2><div class="panel"><table><tr><th>Nombre</th><th>Schedule</th><th>Enabled</th><th>Ultimo run</th></tr>__CRONS__</table></div>
 <!-- PENDING MODULE START (compartimentado: borrar este bloque para quitar) -->
-<h2>Pendientes — cuaderno agentes (__NPENDING__) <button class="info-btn" data-info="pendientes">i</button></h2><div class="panel"><table><tr><th>Tarea (Nombre proyecto::fecha::asunto)</th><th>Estado</th><th>Fecha</th><th>Proyecto</th></tr>__PENDING_ROWS__</table><p class="small">Agentes escriben aquí con <code>Nombre proyecto::fecha::asunto</code> + descripción. Fichero: <code>.opencode/pending_tasks.json</code> · Skill: <code>skill_pending</code> · Quita este módulo borrando el bloque PENDING en <code>gen-dashboard.py</code> y TPL.</p></div>
+<h2>Pendientes — cuaderno agentes (__NPENDING__) <button class="info-btn" data-info="pendientes">i</button></h2><div class="panel"><table><thead><tr><th>Tarea (Nombre proyecto::fecha::asunto)</th><th>Estado</th><th>Fecha</th><th>Proyecto</th></tr></thead><tbody>__PENDING_ROWS__</tbody></table><p class="small">Agentes escriben aquí con <code>Nombre proyecto::fecha::asunto</code> + descripción. Fichero: <code>.opencode/pending_tasks.json</code> · Skill: <code>skill_pending</code> · Quita este módulo borrando el bloque PENDING en <code>gen-dashboard.py</code> y TPL.</p></div>
 <!-- PENDING MODULE END -->
 <div class="panel"><div class="cal-nav"><button id="calPrev">‹</button><b id="calLabel">—</b><button id="calNext">›</button></div><div id="calGrid" class="cal-grid"></div><div id="calDetail" class="cal-detail"><span class="hint">Toca un dia para ver su resumen.</span></div><p class="small">Fondo azulado = dia con gasto · invertido = hoy/seleccion · atenuado = futuro <button class="info-btn" data-info="calendario" style="vertical-align:middle">i</button></p></div>
 </div>
@@ -858,8 +858,11 @@ document.addEventListener('click', function(e){
   var col=ths.indexOf(th);
   var tbodies=[...table.querySelectorAll('tbody')];
   var tbody=tbodies.find(tb=>tb.querySelector('td')) || table.querySelector('tbody') || table;
-  var rows=[...tbody.querySelectorAll('tr')];
+  var rows=[...tbody.querySelectorAll('tr')].filter(r=>r.querySelector('td'));
   if(!rows.length) return;
+  if(rows.length===1 && rows[0].querySelector('td[colspan]')) return;
+  // evita que el header se cuele como fila (tablas sin thead)
+  if(rows.some(r=>r.querySelector('th'))) rows=rows.filter(r=>!r.querySelector('th'));
   if(!table._orig) table._orig=rows.map(r=>r.cloneNode(true));
   var next = th._sortState===1?2: th._sortState===2?0:1;
   ths.forEach(h=>{ if(h!==th) h._sortState=0; h.textContent=h.textContent.replace(/ [▲▼]$/,''); });
