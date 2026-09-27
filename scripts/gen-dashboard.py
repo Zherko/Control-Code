@@ -525,7 +525,7 @@ h1{font-size:22px;margin:0}.sub{color:var(--dim);margin:4px 0 18px}
 .card h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
 .card .big{font-size:26px;font-weight:700}.card .row{display:flex;justify-content:space-between;color:var(--dim);margin-top:4px}
 h2{font-size:15px;margin:22px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 16px;overflow-x:auto}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 16px;overflow-x:auto;margin-bottom:14px}
 table{width:100%;border-collapse:collapse;table-layout:fixed}th{text-align:left;font-size:12px;color:var(--dim);padding:10px 8px;border-bottom:1px solid var(--line)}
 th:first-child,td:first-child{width:auto}
 th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";white-space:nowrap;width:92px;min-width:92px}
@@ -584,6 +584,7 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 <div class="nav" id="nav"><button data-v="inicio" class="on">Inicio</button><button data-v="consumo">Consumo</button><button data-v="plataforma">Plataforma</button><button data-v="recursos">Recursos</button><button data-v="tareas">Tareas</button></div>
 
 <div id="view-inicio" class="view on">
+<div class="grid">__CARDS__</div>
 __INICIO_CARDS__
 <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
 <button class="ghost small" data-evo="30" style="border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:20px;padding:7px 14px;cursor:pointer">30 días</button>
