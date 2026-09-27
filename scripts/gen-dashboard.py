@@ -509,11 +509,12 @@ var NAMES = {total:"todas las fechas con datos",d30:"ultimos 30 dias",d7:"ultimo
 function fmt(n){if(n>=1e9)return(n/1e9).toFixed(2)+"B";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(0)+"K";return""+n;}
 function avg(c,k){var v=k?c/k:0;return "$"+v.toFixed(4);}
 function bar(p){return "<div class='bar'><i style='width:"+Math.max(p,1.5).toFixed(1)+"%'></i></div>";}
-// top nav
+// top nav + persist
 var navBtns = document.querySelectorAll("#nav button");
 for(var ni=0;ni<navBtns.length;ni++){(function(b){b.addEventListener("click",function(){
   for(var j=0;j<navBtns.length;j++){navBtns[j].classList.remove("on");document.getElementById("view-"+navBtns[j].getAttribute("data-v")).classList.remove("on");}
   b.classList.add("on");document.getElementById("view-"+b.getAttribute("data-v")).classList.add("on");
+  try{localStorage.setItem('pc_view', b.getAttribute('data-v'));}catch(e){}
 });})(navBtns[ni]);}
 // consumo range
 function render(r){
@@ -536,10 +537,14 @@ function render(r){
   if(pe) pe.innerHTML = ph || "<tr><td colspan=5>sin datos en este rango</td></tr>";
   if(me) me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>";
   var tp=document.getElementById("t-proj"); if(tp) tp.textContent="Por proyecto ("+label+")";
+  try{localStorage.setItem('pc_range', r);}catch(e){}
+  setTimeout(restoreSorts, 0);
 }
 var rbtns = document.querySelectorAll("#tabs button");
 for(var i2=0;i2<rbtns.length;i2++){(function(b){b.addEventListener("click",function(){render(b.getAttribute("data-r"));});})(rbtns[i2]);}
-render("total");
+var _initRange=null; try{_initRange=localStorage.getItem('pc_range');}catch(e){}
+render(_initRange && D.ranges[_initRange] ? _initRange : "total");
+try{ var _initView=localStorage.getItem('pc_view'); if(_initView && document.getElementById('view-'+_initView)){ navBtns.forEach(function(b){b.classList.remove('on');}); document.querySelectorAll('.view').forEach(function(v){v.classList.remove('on');}); document.querySelector('#nav [data-v="'+_initView+'"]').classList.add('on'); document.getElementById('view-'+_initView).classList.add('on'); } }catch(e){}
 // skill filter
 var sf = document.getElementById("skill-filter");
 var sb = document.getElementById("skill-body");
@@ -564,6 +569,8 @@ function parseVal(txt){
   if(/[BMK]$/.test(txt)){ var n=parseFloat(txt); if(txt.endsWith('B')) return n*1e9; if(txt.endsWith('M')) return n*1e6; if(txt.endsWith('K')) return n*1e3; return n; }
   var v=parseFloat(txt.replace(/,/g,'')); return isNaN(v)? txt.toLowerCase() : v;
 }
+function saveSorts(){ try{ var tables=[...document.querySelectorAll('.panel table')]; var o={}; tables.forEach(function(t,i){ var th=[...t.querySelectorAll('th')].find(function(h){return h._sortState}); if(th){ o[i]={c:[...t.querySelectorAll('th')].indexOf(th), s:th._sortState}; } }); localStorage.setItem('pc_sorts', JSON.stringify(o)); }catch(e){} }
+function restoreSorts(){ try{ var o=JSON.parse(localStorage.getItem('pc_sorts')||'{}'); var tables=[...document.querySelectorAll('.panel table')]; for(var k in o){ var t=tables[k]; if(!t) continue; var th=t.querySelectorAll('th')[o[k].c]; if(!th) continue; for(var n=0;n<o[k].s;n++){ th.click(); } } }catch(e){} }
 document.addEventListener('click', function(e){
   var th=e.target.closest('th'); if(!th) return;
   var table=th.closest('table'); if(!table || !table.closest('.panel')) return;
@@ -579,14 +586,14 @@ document.addEventListener('click', function(e){
   ths.forEach(h=>{ if(h!==th) h._sortState=0; h.textContent=h.textContent.replace(/ [▲▼]$/,''); });
   th._sortState=next;
   ths.forEach(h=>{ h.textContent=h.textContent.replace(/ [▲▼]$/,''); if(h._sortState===1) h.textContent+=' ▼'; else if(h._sortState===2) h.textContent+=' ▲'; });
-  if(next===0){ tbody.innerHTML=''; table._orig.forEach(r=>tbody.appendChild(r.cloneNode(true))); return; }
+  if(next===0){ tbody.innerHTML=''; table._orig.forEach(r=>tbody.appendChild(r.cloneNode(true))); saveSorts(); return; }
   rows.sort((a,b)=>{
     var av=parseVal(a.children[col]?.textContent), bv=parseVal(b.children[col]?.textContent);
     if(typeof av==='string' && typeof bv==='string') return next===1? bv.localeCompare(av) : av.localeCompare(bv);
     if(typeof av==='string') return 1; if(typeof bv==='string') return -1;
     return next===1? bv-av : av-bv;
   });
-  tbody.innerHTML=''; rows.forEach(r=>tbody.appendChild(r));
+  tbody.innerHTML=''; rows.forEach(r=>tbody.appendChild(r)); saveSorts();
 });
 document.querySelectorAll('.panel table th').forEach(th=>{ if(th.textContent.trim()!==''){ th.style.cursor='pointer'; th.title='Ordenar'; } });
 // calendario estilo Pomodoro (historial.js) + detalle por dia
@@ -700,13 +707,17 @@ function renderEvo(mode){
     leg.innerHTML=html;
   }
 }
-renderEvo('30');
+var _evoInit=null; try{_evoInit=localStorage.getItem('pc_evo');}catch(e){}
+renderEvo(_evoInit==='90'?'90':'30');
+try{ document.querySelectorAll('[data-evo]').forEach(function(b){ var on=b.getAttribute('data-evo')===(_evoInit==='90'?'90':'30'); b.style.background=on?'var(--panel)':'transparent'; b.style.color=on?'var(--txt)':'var(--dim)'; }); }catch(e){}
 document.querySelectorAll('[data-evo]').forEach(function(b){ b.addEventListener('click',function(){
   document.querySelectorAll('[data-evo]').forEach(function(x){ x.style.background='transparent'; x.style.color='var(--dim)'; });
   b.style.background='var(--panel)'; b.style.color='var(--txt)';
+  try{localStorage.setItem('pc_evo', b.getAttribute('data-evo'));}catch(e){}
   renderEvo(b.getAttribute('data-evo'));
 });});
 window.addEventListener('resize', function(){ var active=document.querySelector('[data-evo][style*="var(--panel)"]'); renderEvo(active?active.getAttribute('data-evo'):'30'); });
+setTimeout(restoreSorts, 300);
 // info popups mismo estilo web
 var INFO={
   evo:{t:'Evolución eficiencia',h:'<p><b>Qué ves:</b> $ por cada 1.000 líneas netas que se quedan (coste de <code>opencode.db</code> / neto de <code>git log --numstat</code>).</p><p><b>Cómo leerlo:</b> línea baja y estable = vas directo, gastas poco por lo que entregas. Pico = día con mucho coste y poco neto (muchas correcciones).</p><ul><li><b>Equipo</b> = media diaria</li><li>Top autores = reparto equitativo del coste del día</li><li>90d agrega por semana para mantener ancho fijo sin scroll</li></ul><p>Ventana 30d: no penaliza antigüedad, todos comparables.</p>'},
