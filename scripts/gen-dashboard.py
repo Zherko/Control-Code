@@ -608,7 +608,7 @@ function skillRender(q){
 }
 if(sf){ sf.addEventListener("input", function(){ skillRender(sf.value); }); skillRender(""); }
 // auto-refresh oculto pero marcado: Ctrl+F5 manual
-var ar=document.getElementById('ar'); if(ar){ ar.checked=true; var iv=setInterval(()=>location.reload(),30000); document.addEventListener('keydown', function(e){ if(e.ctrlKey && e.key==='F5'){ e.preventDefault(); location.reload(); } if(e.ctrlKey && e.key.toLowerCase()==='r' && e.shiftKey){ e.preventDefault(); location.reload(); } }); }
+var ar=document.getElementById('ar'); if(ar){ ar.checked=true; var iv=setInterval(()=>{ if(document.getElementById('infoModal')?.classList.contains('on')) return; location.reload(); },30000); document.addEventListener('keydown', function(e){ if(e.ctrlKey && e.key==='F5'){ e.preventDefault(); location.reload(); } if(e.ctrlKey && e.key.toLowerCase()==='r' && e.shiftKey){ e.preventDefault(); location.reload(); } }); }
 // ordenable 3 estados: desc -> asc -> default (fix cross-table)
 function parseVal(txt){
   txt=(txt||'').trim();
