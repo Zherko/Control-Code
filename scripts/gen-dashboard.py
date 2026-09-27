@@ -443,6 +443,16 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 .evo-legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;font-size:12px;color:var(--dim)}
 .evo-legend span{display:inline-flex;align-items:center;gap:6px}
 .evo-legend i{width:12px;height:3px;border-radius:2px;display:inline-block}
+.info-btn{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:11px;line-height:16px;text-align:center;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin-left:8px;vertical-align:middle}
+.info-btn:hover{border-color:var(--acc);color:var(--acc)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:99;padding:20px}
+.modal.on{display:flex}
+.modal-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:560px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.modal-box h3{margin:0 0 8px;font-size:14px;color:var(--txt)}
+.modal-box p{margin:8px 0;color:var(--dim);font-size:13px;line-height:1.6}
+.modal-box ul{margin:8px 0 0 18px;color:var(--dim);font-size:13px;line-height:1.6}
+.modal-close{margin-top:14px;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:8px;padding:8px 14px;cursor:pointer}
+.modal-close:hover{border-color:var(--txt)}
 </style></head><body><div class="wrap">
 <div class="top"><span class="dot"></span><h1>Centro de control</h1><label id="ar-wrap" style="display:none"><input type="checkbox" id="ar" checked></label></div>
 <p class="sub">Fuente: <code>opencode.db</code> · __MSGS__ mensajes · <code>opencode.json</code> · generado __NOW__</p>
@@ -454,8 +464,8 @@ __INICIO_CARDS__
 <button class="ghost small" data-evo="30" style="border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:20px;padding:7px 14px;cursor:pointer">30 días</button>
 <button class="ghost small" data-evo="90" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:7px 14px;cursor:pointer">90 días (semanal)</button>
 </div>
-<h2>Evolución eficiencia · $/k neto (menor es mejor)</h2><div class="panel"><div id="evoChart" class="evo-wrap"></div><div id="evoLegend" class="evo-legend"></div><p class="small">Fijo ancho 100% sin scroll. Ventana 30d por autor (coste del día repartido equitativamente entre autores activos). 90d agrega por semana.</p></div>
-<h2>Por autor · 30 días</h2><div class="panel"><table><tr><th>Autor</th><th class="num">Neto</th><th class="num">$/k neto</th><th class="num">Rework</th><th class="num">Commits</th><th class="num">Días</th></tr><tbody>__INICIO_AUTHORS__</tbody></table><p class="small">Ordenado por eficiencia ($/k menor primero). Neto = líneas +/− que se quedan. Rework = del/add. Sin API Git, solo <code>git log --numstat</code>.</p></div>
+<h2>Evolución eficiencia · $/k neto (menor es mejor) <button class="info-btn" data-info="evo">i</button></h2><div class="panel"><div id="evoChart" class="evo-wrap"></div><div id="evoLegend" class="evo-legend"></div><p class="small">Fijo ancho 100% sin scroll. Ventana 30d por autor (coste del día repartido equitativamente entre autores activos). 90d agrega por semana.</p></div>
+<h2>Por autor · 30 días <button class="info-btn" data-info="autores">i</button></h2><div class="panel"><table><tr><th>Autor</th><th class="num">Neto</th><th class="num">$/k neto</th><th class="num">Rework</th><th class="num">Commits</th><th class="num">Días</th></tr><tbody>__INICIO_AUTHORS__</tbody></table><p class="small">Ordenado por eficiencia ($/k menor primero). Neto = líneas +/− que se quedan. Rework = del/add. Sin API Git, solo <code>git log --numstat</code>.</p></div>
 <h2>Resumen rápido</h2><div class="panel"><p class="small">Consumo: <span id="sumConsumo">—</span> · Recursos: __NAGENTS__ agentes · __NSKILLS__ skills · Tareas: __NGOALS__ goals · __NCRONS__ crons · <a href="#" onclick="document.querySelector('[data-v=consumo]').click();return false;" style="color:var(--acc)">ir a Consumo</a></p></div>
 </div>
 
@@ -463,30 +473,31 @@ __INICIO_CARDS__
 <div class="grid">__CARDS__</div>
 <div class="tabs" id="tabs"><button data-r="total" class="on">Total</button><button data-r="d30">Ultimos 30 dias</button><button data-r="d7">Ultimos 7 dias</button><button data-r="d1">Hoy</button></div>
 <p class="rangelabel" id="rangelabel"></p>
-<h2>Actividad diaria · ultimos 7 dias (fija)</h2><div class="panel"><div class="days" id="days"></div></div>
-<h2 id="t-proj">Por proyecto</h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th></th></tr><tbody id="projs"></tbody></table></div>
-<h2>Por modelo (del rango)</h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th></th></tr><tbody id="mods"></tbody></table></div>
-<h2>Herramientas & caché</h2>__CACHE_HTML__<div class="panel"><table><tr><th>Herramienta</th><th class="num">Llamadas</th><th></th></tr>__TOOL_ROWS__</table><p class="small">MCPs con 0 llamadas = dead weight. Cache alto (>90%) = bien. Datos de <code>part.type=tool</code> + <code>message.tokens.cache</code>.</p></div>
-<h2>Git · últimos 7 días</h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Commits</th><th class="num">Líneas +</th><th class="num">Líneas -</th></tr>__GIT_ROWS__</table><p class="small">Si un proyecto no es git, muestra 0. Coste por commit = coste 7d / commits.</p></div>
+<h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
+<h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th></th></tr><tbody id="projs"></tbody></table></div>
+<h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th></th></tr><tbody id="mods"></tbody></table></div>
+<h2>Herramientas & caché <button class="info-btn" data-info="tools">i</button></h2>__CACHE_HTML__<div class="panel"><table><tr><th>Herramienta</th><th class="num">Llamadas</th><th></th></tr>__TOOL_ROWS__</table><p class="small">MCPs con 0 llamadas = dead weight. Cache alto (>90%) = bien. Datos de <code>part.type=tool</code> + <code>message.tokens.cache</code>.</p></div>
+<h2>Git · últimos 7 días <button class="info-btn" data-info="git">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Commits</th><th class="num">Líneas +</th><th class="num">Líneas -</th></tr>__GIT_ROWS__</table><p class="small">Si un proyecto no es git, muestra 0. Coste por commit = coste 7d / commits.</p></div>
 </div>
 
 <div id="view-recursos" class="view">
 <p class="small">__NAGENTS__ agentes · __NSKILLS__ skills (global+proyecto) · __NMCP__ MCPs — desde <code>~/.config/opencode/opencode.json</code></p>
-<h2>Agentes</h2><div class="panel"><table><tr><th>Agente</th><th>Descripcion</th><th>Mode</th><th>Tools</th></tr>__AGENTS__</table></div>
-<h2>MCPs</h2><div class="panel"><table><tr><th>MCP</th><th>Type</th><th>Enabled</th><th>Command</th></tr>__MCPS__</table></div>
-<h2>Skills</h2>
+<h2>Agentes <button class="info-btn" data-info="agentes">i</button></h2><div class="panel"><table><tr><th>Agente</th><th>Descripcion</th><th>Mode</th><th>Tools</th></tr>__AGENTS__</table></div>
+<h2>MCPs <button class="info-btn" data-info="mcps">i</button></h2><div class="panel"><table><tr><th>MCP</th><th>Type</th><th>Enabled</th><th>Command</th></tr>__MCPS__</table></div>
+<h2>Skills <button class="info-btn" data-info="skills">i</button></h2>
 <input id="skill-filter" class="filter" placeholder="Filtrar skills… (escribe 'seo', 'cron', etc.)">
 <div class="panel"><table><tr><th>Skill</th><th>Scope</th><th>Descripcion</th></tr><tbody id="skill-body">__SKILLS__</tbody></table><p class="small" id="skill-count"></p></div>
 </div>
 
 <div id="view-tareas" class="view">
-<h2>Goals (__NGOALS__)</h2><div class="panel"><table><tr><th>ID</th><th>Titulo</th><th>Criteria</th><th>Estado</th></tr>__GOALS__</table></div>
-<h2>Crons (__NCRONS__)</h2><div class="panel"><table><tr><th>Nombre</th><th>Schedule</th><th>Enabled</th><th>Ultimo run</th></tr>__CRONS__</table></div>
-<div class="panel"><div class="cal-nav"><button id="calPrev">‹</button><b id="calLabel">—</b><button id="calNext">›</button></div><div id="calGrid" class="cal-grid"></div><div id="calDetail" class="cal-detail"><span class="hint">Toca un dia para ver su resumen.</span></div><p class="small">Fondo azulado = dia con gasto · invertido = hoy/seleccion · atenuado = futuro.</p></div>
+<h2>Goals (__NGOALS__) <button class="info-btn" data-info="goals">i</button></h2><div class="panel"><table><tr><th>ID</th><th>Titulo</th><th>Criteria</th><th>Estado</th></tr>__GOALS__</table></div>
+<h2>Crons (__NCRONS__) <button class="info-btn" data-info="crons">i</button></h2><div class="panel"><table><tr><th>Nombre</th><th>Schedule</th><th>Enabled</th><th>Ultimo run</th></tr>__CRONS__</table></div>
+<div class="panel"><div class="cal-nav"><button id="calPrev">‹</button><b id="calLabel">—</b><button id="calNext">›</button></div><div id="calGrid" class="cal-grid"></div><div id="calDetail" class="cal-detail"><span class="hint">Toca un dia para ver su resumen.</span></div><p class="small">Fondo azulado = dia con gasto · invertido = hoy/seleccion · atenuado = futuro <button class="info-btn" data-info="calendario" style="vertical-align:middle">i</button></p></div>
 </div>
 
 <p class="foot">Regenerar: <code>python scripts/gen-dashboard.py</code> · Consumo filtra por rango (tabs); Recursos/Tareas son inventario vivo.</p>
 </div>
+<div id="infoModal" class="modal" onclick="if(event.target===this) closeInfo()"><div class="modal-box"><h3 id="infoTitle"></h3><div id="infoBody"></div><button class="modal-close" onclick="closeInfo()">Cerrar</button></div></div>
 <script>
 var D = __DATA__;
 var EVO = __EVO_DATA__;
@@ -684,6 +695,26 @@ document.querySelectorAll('[data-evo]').forEach(function(b){ b.addEventListener(
   renderEvo(b.getAttribute('data-evo'));
 });});
 window.addEventListener('resize', function(){ var active=document.querySelector('[data-evo][style*="var(--panel)"]'); renderEvo(active?active.getAttribute('data-evo'):'30'); });
+// info popups mismo estilo web
+var INFO={
+  evo:{t:'Evolución eficiencia',h:'<p><b>Qué ves:</b> $ por cada 1.000 líneas netas que se quedan (coste de <code>opencode.db</code> / neto de <code>git log --numstat</code>).</p><p><b>Cómo leerlo:</b> línea baja y estable = vas directo, gastas poco por lo que entregas. Pico = día con mucho coste y poco neto (muchas correcciones).</p><ul><li><b>Equipo</b> = media diaria</li><li>Top autores = reparto equitativo del coste del día</li><li>90d agrega por semana para mantener ancho fijo sin scroll</li></ul><p>Ventana 30d: no penaliza antigüedad, todos comparables.</p>'},
+  autores:{t:'Por autor · 30 días',h:'<p><b>Neto</b> = líneas añadidas − borradas que sobreviven. <b>$/k</b> = tu parte del coste / neto. <b>Rework</b> = borradas/añadidas (estable &lt;20% ideal).</p><p><b>Interpreta:</b> $/k bajo + neto alto + rework bajo = eficiente. Muchos commits no implica mejor, mira neto.</p><p>100% local con <code>git log --since=30 days</code>, sin API.</p>'},
+  actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
+  proyecto:{t:'Por proyecto',h:'<p>Reparto de tokens/coste por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio de cada consulta. Barra = peso relativo. Clic en cabecera para ordenar (▼/▲/default).</p>'},
+  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p>Compara coste/msg entre modelos: un modelo barato con muchos msgs puede salir mejor que uno caro.</p>'},
+  tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
+  git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
+  agentes:{t:'Agentes',h:'<p>26 agentes definidos en <code>~/.config/opencode/opencode.json</code>. Mode = primary/subagent, Tools = qué puede usar.</p><p>Inventario vivo: lo que realmente tienes disponible.</p>'},
+  mcps:{t:'MCPs',h:'<p>Servidores MCP conectados (ej. <code>gsc</code>, <code>supadata</code>). Si está off, sus tools no cuentan en Herramientas.</p>'},
+  skills:{t:'Skills',h:'<p>247 skills globales + proyecto. Filtra escribiendo. Scope global = disponible siempre, project = solo aquí.</p>'},
+  goals:{t:'Goals',h:'<p>Objetivos activos/archivados en <code>.opencode/goals</code>. Criterio = cómo se da por cumplido.</p>'},
+  crons:{t:'Crons',h:'<p>Tareas programadas en <code>.opencode/cron/jobs.json</code>. Si ves 0, crea uno con <code>/skill_cron</code>.</p>'},
+  calendario:{t:'Calendario',h:'<p>Vista mensual estilo Pomodoro. Fondo azulado = día con gasto, invertido = hoy/selección, atenuado = futuro.</p><p>Pincha un día para ver su detalle de proyecto/modelo y coste/msg de ese día.</p>'}
+};
+function openInfo(k){ var d=INFO[k]; if(!d) return; document.getElementById('infoTitle').textContent=d.t; document.getElementById('infoBody').innerHTML=d.h; document.getElementById('infoModal').classList.add('on'); }
+function closeInfo(){ document.getElementById('infoModal').classList.remove('on'); }
+document.addEventListener('click',function(e){ var b=e.target.closest('.info-btn'); if(b){ openInfo(b.getAttribute('data-info')); }});
+document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(); });
 </script></body></html>"""
 
 doc = TPL.replace("__MSGS__", str(msgs)).replace("__NOW__", now).replace("__CARDS__", cards_html)
