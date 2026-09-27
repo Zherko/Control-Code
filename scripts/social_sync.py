@@ -4,14 +4,18 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DB = os.path.expanduser(r"~\.local\share\opencode\opencode.db")
 CONF = os.path.expanduser(r"~\.config\opencode\opencode.json")
 SUPA_URL = "https://pro-serv.tail9f39ff.ts.net"
-DB_ID = "db27"  # panel-control-social
+DB_ID = "db28"  # panel-social-v2 (owner social, key publica sd_qKMP...)
 TABLE = "peers"
+SOCIAL_KEY = "sd_qKMPbKz3p36CZpBoVO-sOOheH0WdyzCq"
 
 def get_key():
+    # usa key publica social si no hay admin key
     try:
         cfg=json.load(open(CONF,encoding="utf-8-sig"))
-        return ((cfg.get("mcp",{}).get("supadata",{}).get("environment",{}).get("SUPADATA_API_KEY")) or os.environ.get("SUPADATA_API_KEY") or "").strip()
-    except: return os.environ.get("SUPADATA_API_KEY","").strip()
+        k = ((cfg.get("mcp",{}).get("supadata",{}).get("environment",{}).get("SUPADATA_API_KEY")) or os.environ.get("SUPADATA_API_KEY") or "").strip()
+        if k: return k
+    except: pass
+    return SOCIAL_KEY
 
 def compute_self():
     # replica mínima de gen-dashboard para tok hoy/30d, churn, proyectos

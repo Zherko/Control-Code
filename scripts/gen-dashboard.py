@@ -641,7 +641,8 @@ git_html_rows = "".join(f"<tr><td title='{html.escape(p[4])}'>{html.escape(p[0])
 # calendario se pinta en JS (estilo Pomodoro); no hay cal estático
 
 # --- SOCIAL MODULE START (compartimentado: borrar este bloque + TPL Social para quitar) ---
-SUPA_DB_ID = "db27"
+SUPA_DB_ID = "db28"  # panel-social-v2 (owner social, key publica limitada)
+SOCIAL_KEY = "sd_qKMPbKz3p36CZpBoVO-sOOheH0WdyzCq"  # key del usuario social (1GB, solo peers+messages) — no es admin
 social_self = {}
 social_peers = []
 social_peers_html = ""
@@ -661,39 +662,30 @@ try:
     _eff = (_cost_30d / (_churn_30d/1000)) if _churn_30d else 0
     social_self = {"tok_today": _tok_today, "tok_30d": _tok_30d, "cost_today": round(_cost_today,4), "cost_30d": round(_cost_30d,4), "churn_30d": _churn_30d, "projects": _projects, "eff": round(_eff,2)}
     social_self_json = json.dumps(social_self, ensure_ascii=False)
-    # fetch peers snapshot (build-time) — no rompe si falla
+    # fetch peers snapshot (build-time) con key publica — no rompe si falla
     try:
         import urllib.request
-        key = ""
-        try:
-            cfg2=json.load(open(CONF,encoding="utf-8-sig"))
-            key = ((cfg2.get("mcp",{}).get("supadata",{}).get("environment",{}).get("SUPADATA_API_KEY")) or "").strip()
-        except: pass
-        if key:
-            url = f"https://pro-serv.tail9f39ff.ts.net/v1/databases/{SUPA_DB_ID}/rows?table=peers&limit=50&order=desc"
-            req=urllib.request.Request(url, headers={"x-api-key":key})
-            with urllib.request.urlopen(req, timeout=4) as r:
-                j=json.loads(r.read().decode())
-                social_peers = j.get("rows") or []
-                social_json = json.dumps(social_peers, ensure_ascii=False)
-                # html para tabla (online primero, luego por tok_30d desc)
-                def _skey(x): return (0 if x.get("status")=="online" else 1, -int(x.get("tok_30d") or 0))
-                social_peers_sorted = sorted(social_peers, key=_skey)
-                rows=[]
-                for p in social_peers_sorted[:20]:
-                    nm=html.escape(str(p.get("name","?"))[:32])
-                    tt=fmt_tok(int(p.get("tok_today") or 0)); t30=fmt_tok(int(p.get("tok_30d") or 0))
-                    ch=int(p.get("churn_30d") or 0); chf=fmt_tok(ch) if ch else "0"
-                    eff_p = (float(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
-                    eff_s = f"${eff_p:.2f}/k" if eff_p else "—"
-                    pr=int(p.get("projects") or 0)
-                    st=p.get("status") or "offline"
-                    pill="grn" if st=="online" else "dim"
-                    upd=str(p.get("updated_at",""))[:16].replace("T"," ")
-                    rows.append(f"<tr><td><b>{nm}</b></td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
-                social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Conectar</td></tr>"
-        else:
-            social_peers_html = "<tr><td colspan=7 class='dim'>sin key Supadata — configura SUPADATA_API_KEY en opencode.json</td></tr>"
+        url = f"https://pro-serv.tail9f39ff.ts.net/v1/databases/{SUPA_DB_ID}/rows?table=peers&limit=50&order=desc"
+        req=urllib.request.Request(url, headers={"x-api-key":SOCIAL_KEY})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            j=json.loads(r.read().decode())
+            social_peers = j.get("rows") or []
+            social_json = json.dumps(social_peers, ensure_ascii=False)
+            def _skey(x): return (0 if x.get("status")=="online" else 1, -int(x.get("tok_30d") or 0))
+            social_peers_sorted = sorted(social_peers, key=_skey)
+            rows=[]
+            for p in social_peers_sorted[:20]:
+                nm=html.escape(str(p.get("name","?"))[:32])
+                tt=fmt_tok(int(p.get("tok_today") or 0)); t30=fmt_tok(int(p.get("tok_30d") or 0))
+                ch=int(p.get("churn_30d") or 0)
+                eff_p = (float(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
+                eff_s = f"${eff_p:.2f}/k" if eff_p else "—"
+                pr=int(p.get("projects") or 0)
+                st=p.get("status") or "offline"
+                pill="grn" if st=="online" else "dim"
+                upd=str(p.get("updated_at",""))[:16].replace("T"," ")
+                rows.append(f"<tr class='social-row' data-peer='{nm}' style='cursor:pointer'><td><b>{nm}</b></td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
+            social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Conectar</td></tr>"
     except Exception as e:
         social_peers_html = f"<tr><td colspan=7 class='dim'>peers no disponibles: {html.escape(str(e)[:60])}</td></tr>"
 except Exception as e:
@@ -832,11 +824,10 @@ __INICIO_COACHING__
 <div id="view-social" class="view">
 <h2>Social — peers conectados <button class="info-btn" data-info="social">i</button></h2>
 <div class="panel" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-<input id="socialName" class="filter" style="max-width:260px" placeholder="Tu nombre (único, sin repetir)">
-<input id="socialKey" class="filter" style="max-width:320px" placeholder="x-api-key Supadata (opcional, se guarda local)">
-<button id="socialConnect" style="border:1px solid var(--grn);background:var(--grn);color:#000;border-radius:20px;padding:8px 16px;cursor:pointer;font-weight:700">Conectar y compartir</button>
+<button id="socialConnect" style="border:1px solid var(--grn);background:var(--grn);color:#000;border-radius:20px;padding:10px 18px;cursor:pointer;font-weight:700">⚡ Conectar</button>
 <button id="socialDisconnect" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:8px 14px;cursor:pointer;display:none">Desconectar</button>
 <span id="socialStatus" class="small"></span>
+<span class="small" style="margin-left:auto">Pincha un peer para chatear</span>
 </div>
 <div class="grid" style="grid-template-columns:repeat(4,1fr)">
 <div class="card"><h3>Tú — hoy</h3><div class="big" id="socialYouToday">__SOCIAL_YOU_TODAY__</div><div class="row"><span id="socialYouCostToday"></span><span>tokens</span></div></div>
@@ -849,6 +840,7 @@ __INICIO_COACHING__
 <!-- SOCIAL MODULE END -->
 <p class="foot">Regenerar: <code>python scripts/gen-dashboard.py</code> · Consumo filtra por rango (tabs); Recursos/Tareas son inventario vivo.</p>
 </div>
+<div id="chatModal" class="modal" onclick="if(event.target===this) closeChat()"><div class="modal-box"><h3 id="chatTitle">Chat</h3><div id="chatHistory" style="max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg)"></div><div style="display:flex;gap:8px;margin-top:12px"><input id="chatInput" class="filter" placeholder="Escribe un mensaje..." style="flex:1;margin:0"><button id="chatSend" style="border:1px solid var(--grn);background:var(--grn);color:#000;border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:700">Enviar</button></div><button class="modal-close" onclick="closeChat()">Cerrar</button></div></div>
 <div id="infoModal" class="modal" onclick="if(event.target===this) closeInfo()"><div class="modal-box"><h3 id="infoTitle"></h3><div id="infoBody"></div><button class="modal-close" onclick="closeInfo()">Cerrar</button></div></div>
 <script>
 var D = __DATA__;
@@ -1130,96 +1122,101 @@ var INFO={
   crons:{t:'Crons',h:'<p>Tareas programadas en <code>.opencode/cron/jobs.json</code>. Si ves 0, crea uno con <code>/skill_cron</code>.</p>'},
    calendario:{t:'Calendario',h:'<p>Vista mensual estilo Pomodoro. Fondo azulado = día con gasto, invertido = hoy/selección, atenuado = futuro.</p><p>Pincha un día para ver su detalle de proyecto/modelo y coste/msg de ese día.</p>'},
    pendientes:{t:'Pendientes — cuaderno agentes',h:'<p><b>Formato título:</b> <code>Nombre proyecto::fecha::asunto</code> + descripción dentro.</p><p>Agentes añaden filas a <code>.opencode/pending_tasks.json</code> cuando detectan deuda/bloqueo o tú les dices <em>apúntalo</em>. Aparece aquí tras regenerar.</p><p>Skill: <code>skill_pending</code>. Compartimentado: borra el fichero + skill + bloque PENDING para quitarlo.</p>'},
-  social:{t:'Social — peers',h:'<p><b>Al conectarte</b> compartes tok hoy/30d, $/k churn y nº proyectos con otros conectados vía <code>Supadata db27/peers</code>.</p><p><b>Nombre único:</b> no se puede repetir; si existe se añade sufijo. Guarda tu key Supadata local (<code>pc_social_key</code>) y nombre (<code>pc_social_name</code>).</p><p>Usa <code>skill_social</code> o <code>python scripts/social_sync.py --connect</code>. Compartimentado: borra DB + <code>social_sync.py</code> + bloque SOCIAL.</p>'}
+  social:{t:'Social — peers',h:'<p><b>Con un botón Conectar</b> compartes tok hoy/30d, $/k churn y nº proyectos con otros conectados vía <code>Supadata db28/peers</code> — nombre auto-asignado único, sin repetir.</p><p><b>Chat:</b> pincha un peer en la tabla para abrir chat privado.</p><p>Usa <code>skill_social</code> o <code>python scripts/social_sync.py --connect</code>. Compartimentado: borra DB + <code>social_sync.py</code> + bloque SOCIAL.</p>'}
 };
 function openInfo(k){ var d=INFO[k]; if(!d) return; document.getElementById('infoTitle').textContent=d.t; document.getElementById('infoBody').innerHTML=d.h; document.getElementById('infoModal').classList.add('on'); }
 function closeInfo(){ document.getElementById('infoModal').classList.remove('on'); }
 document.addEventListener('click',function(e){ var b=e.target.closest('.info-btn'); if(b){ openInfo(b.getAttribute('data-info')); }});
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(); });
-// --- SOCIAL MODULE JS (compartimentado) ---
+// --- SOCIAL MODULE JS (compartimentado) — solo botón Conectar + chat al pinchar peer ---
 (function(){
-  var nameEl=document.getElementById('socialName'), keyEl=document.getElementById('socialKey'),
-      connBtn=document.getElementById('socialConnect'), disBtn=document.getElementById('socialDisconnect'),
-      statusEl=document.getElementById('socialStatus');
-  if(!nameEl) return;
+  var SOCIAL_KEY="sd_qKMPbKz3p36CZpBoVO-sOOheH0WdyzCq", DB="db28";
+  var connBtn=document.getElementById('socialConnect'), disBtn=document.getElementById('socialDisconnect'), statusEl=document.getElementById('socialStatus');
+  if(!connBtn) return;
   function fmtTok(n){ if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return ''+n; }
-  // rellena tus cards desde SOCIAL_SELF
   try{
     var ct=document.getElementById('socialYouCostToday'); if(ct && SOCIAL_SELF) ct.textContent='$'+(SOCIAL_SELF.cost_today||0).toFixed(2);
     var c30=document.getElementById('socialYouCost30'); if(c30 && SOCIAL_SELF) c30.textContent='$'+(SOCIAL_SELF.cost_30d||0).toFixed(2);
     var pr=document.getElementById('socialYouProjects'); if(pr && SOCIAL_SELF) pr.textContent=SOCIAL_SELF.projects+' proyectos';
   }catch(e){}
   function genName(){ return 'anon-'+Math.random().toString(16).slice(2,6); }
-  function load(){
-    try{ var n=localStorage.getItem('pc_social_name')||''; if(n) nameEl.value=n; else nameEl.placeholder=genName();
-         var k=localStorage.getItem('pc_social_key')||''; if(k) keyEl.value=k;
-         var connected=localStorage.getItem('pc_social_connected')==='1';
-         if(connected){ connBtn.style.display='none'; disBtn.style.display='inline-block'; statusEl.textContent='Conectado como '+n+' — compartiendo tok hoy/30d, $/k churn, proyectos'; statusEl.style.color='var(--grn)'; }
-         else { connBtn.style.display='inline-block'; disBtn.style.display='none'; statusEl.textContent='No conectado — al pulsar compartirás tus datos'; statusEl.style.color='var(--dim)'; }
-    }catch(e){}
+  function getName(){ try{ return localStorage.getItem('pc_social_name')||'' }catch(e){return ''} }
+  function isConnected(){ try{ return localStorage.getItem('pc_social_connected')==='1' }catch(e){return false} }
+  function updateUI(){
+    var n=getName(); var on=isConnected();
+    if(on){ connBtn.style.display='none'; disBtn.style.display='inline-block'; statusEl.textContent='Conectado como '+n+' — compartiendo tok hoy/30d, $/k churn, proyectos'; statusEl.style.color='var(--grn)'; }
+    else { connBtn.style.display='inline-block'; disBtn.style.display='none'; statusEl.textContent='No conectado — pulsa Conectar para compartir'; statusEl.style.color='var(--dim)'; }
   }
-  load();
-  function saveAndSync(name, key){
-    try{ localStorage.setItem('pc_social_name', name); if(key) localStorage.setItem('pc_social_key', key); localStorage.setItem('pc_social_connected','1'); }catch(e){}
-    statusEl.textContent='Conectado como '+name+' — ejecutando sync…'; statusEl.style.color='var(--grn)';
-    // intenta push directo a Supadata si hay key (puede fallar por CORS, es ok — el sync real lo hace python)
-    if(key){
-      try{
-        var payload={table:'peers', row:{name:name, tok_today:SOCIAL_SELF.tok_today||0, tok_30d:SOCIAL_SELF.tok_30d||0, cost_today:SOCIAL_SELF.cost_today||0, cost_30d:SOCIAL_SELF.cost_30d||0, churn_30d:SOCIAL_SELF.churn_30d||0, projects:SOCIAL_SELF.projects||0, updated_at:new Date().toISOString(), status:'online'}, onConflict:['name'], resolution:'last'};
-        fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/db27/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':key}, body:JSON.stringify(payload)}).then(r=>r.json()).then(j=>{
-          statusEl.textContent='Conectado como '+name+' — compartido ✓ (Supadata)'; 
-          setTimeout(()=>{ try{ softRefresh(); }catch(e){ location.reload(); } }, 800);
-        }).catch(e=>{ statusEl.textContent='Conectado como '+name+' — guarda local ✓ (CORS, ejecuta python scripts/social_sync.py --connect --name '+name+')'; });
-      }catch(e){ statusEl.textContent='Conectado como '+name+' — guarda local ✓ (ejecuta python scripts/social_sync.py --connect)'; }
-    } else {
-      statusEl.textContent='Conectado como '+name+' — guarda local ✓ (pega tu x-api-key para compartir en vivo, o ejecuta python scripts/social_sync.py --connect --name '+name+')';
-    }
-    load();
+  updateUI();
+  function pushPeer(name, st){
+    var payload={table:'peers', row:{name:name, tok_today:SOCIAL_SELF.tok_today||0, tok_30d:SOCIAL_SELF.tok_30d||0, cost_today:SOCIAL_SELF.cost_today||0, cost_30d:SOCIAL_SELF.cost_30d||0, churn_30d:SOCIAL_SELF.churn_30d||0, projects:SOCIAL_SELF.projects||0, updated_at:new Date().toISOString(), status:st}, onConflict:['name'], resolution:'last'};
+    return fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(r=>r.json());
   }
-  if(connBtn) connBtn.addEventListener('click', function(){
-    var n=(nameEl.value||'').trim() || nameEl.placeholder || genName();
-    var k=(keyEl.value||'').trim();
-    // nombre no repetible: mira snapshot
+  connBtn.addEventListener('click', function(){
+    var n=getName() || genName();
+    // no repetir
     try{
       var exists=(SOCIAL_PEERS_SNAPSHOT||[]).some(p=> (p.name||'').toLowerCase()===n.toLowerCase());
-      if(exists){ var suffix='-'+Math.random().toString(16).slice(2,5); n=n+suffix; nameEl.value=n; statusEl.textContent='Nombre existía, usando '+n; }
+      if(exists){ n=n+'-'+Math.random().toString(16).slice(2,4); }
     }catch(e){}
-    if(!n) { statusEl.textContent='Pon un nombre'; statusEl.style.color='#f85149'; return; }
-    saveAndSync(n,k);
+    try{ localStorage.setItem('pc_social_name', n); localStorage.setItem('pc_social_connected','1'); }catch(e){}
+    statusEl.textContent='Conectando como '+n+'…'; statusEl.style.color='var(--grn)';
+    pushPeer(n,'online').then(()=>{ statusEl.textContent='Conectado como '+n+' ✓'; updateUI(); setTimeout(()=>{ try{ softRefresh(); }catch(e){ location.reload(); } }, 700); }).catch(e=>{ statusEl.textContent='Conectado local como '+n+' (reintenta)'; updateUI(); });
   });
-  if(disBtn) disBtn.addEventListener('click', function(){
-    try{ localStorage.setItem('pc_social_connected','0'); }catch(e){}
-    var n=(nameEl.value||'').trim() || localStorage.getItem('pc_social_name')||'';
-    var k=(keyEl.value||'').trim() || localStorage.getItem('pc_social_key')||'';
-    statusEl.textContent='Desconectado — ya no compartes'; statusEl.style.color='var(--dim)';
-    connBtn.style.display='inline-block'; disBtn.style.display='none';
-    if(k && n){
-      try{
-        var payload={table:'peers', row:{name:n, tok_today:SOCIAL_SELF.tok_today||0, tok_30d:SOCIAL_SELF.tok_30d||0, cost_today:SOCIAL_SELF.cost_today||0, cost_30d:SOCIAL_SELF.cost_30d||0, churn_30d:SOCIAL_SELF.churn_30d||0, projects:SOCIAL_SELF.projects||0, updated_at:new Date().toISOString(), status:'offline'}, onConflict:['name'], resolution:'last'};
-        fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/db27/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':k}, body:JSON.stringify(payload)}).catch(()=>{});
-      }catch(e){}
-    }
+  disBtn.addEventListener('click', function(){
+    var n=getName(); try{ localStorage.setItem('pc_social_connected','0'); }catch(e){}
+    statusEl.textContent='Desconectado'; statusEl.style.color='var(--dim)'; updateUI();
+    if(n) pushPeer(n,'offline').catch(()=>{});
   });
-  // live refresh peers si hay key (cada softRefresh también trae snapshot)
+  // chat al pinchar peer
+  var chatPeer=null;
+  window.openChat=function(peer){
+    chatPeer=peer;
+    document.getElementById('chatTitle').textContent='Chat con '+peer;
+    document.getElementById('chatHistory').innerHTML='<span class="small">Cargando…</span>';
+    document.getElementById('chatModal').classList.add('on');
+    loadChat();
+  };
+  window.closeChat=function(){ document.getElementById('chatModal').classList.remove('on'); chatPeer=null; };
+  function loadChat(){
+    if(!chatPeer) return;
+    var me=getName();
+    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows?table=messages&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
+      var rows=(j.rows||[]).filter(r=> (r.from_name===me && r.to_name===chatPeer) || (r.from_name===chatPeer && r.to_name===me));
+      rows.sort((a,b)=> String(a.created_at).localeCompare(String(b.created_at)));
+      var h=document.getElementById('chatHistory');
+      if(!rows.length) h.innerHTML='<span class="small">Sin mensajes — escribe el primero</span>';
+      else h.innerHTML=rows.map(r=> '<div style="margin:6px 0;text-align:'+(r.from_name===me?'right':'left')+'"><span style="background:'+(r.from_name===me?'#1f6feb':'#21262d')+';color:#e6edf3;padding:6px 10px;border-radius:12px;display:inline-block;max-width:80%">'+String(r.body||'').replace(/</g,'&lt;')+'</span><br><span class="dim" style="font-size:11px">'+String(r.created_at||'').slice(0,16).replace('T',' ')+'</span></div>').join('');
+      h.scrollTop=h.scrollHeight;
+    }).catch(()=>{});
+  }
+  var sendBtn=document.getElementById('chatSend'), input=document.getElementById('chatInput');
+  if(sendBtn) sendBtn.addEventListener('click', function(){
+    var txt=(input.value||'').trim(); if(!txt || !chatPeer) return;
+    var me=getName() || genName();
+    try{ localStorage.setItem('pc_social_name', me); }catch(e){}
+    var payload={table:'messages', row:{from_name:me, to_name:chatPeer, body:txt, created_at:new Date().toISOString()}};
+    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(()=>{ input.value=''; loadChat(); });
+  });
+  if(input) input.addEventListener('keydown', function(e){ if(e.key==='Enter') sendBtn.click(); });
+  document.addEventListener('click', function(e){
+    var tr=e.target.closest('tr.social-row'); if(tr){ var peer=tr.getAttribute('data-peer'); if(peer) openChat(peer); }
+  });
   function refreshPeersLive(){
-    var k=(keyEl && keyEl.value || '').trim() || (function(){ try{ return localStorage.getItem('pc_social_key')||'' }catch(e){return ''} })();
-    if(!k) return;
-    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/db27/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':k}}).then(r=>r.json()).then(j=>{
-      var rows=j.rows||[];
-      if(!rows.length) return;
+    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
+      var rows=j.rows||[]; if(!rows.length) return;
       var tb=document.getElementById('socialPeers'); if(!tb) return;
-      var html='';
       rows.sort((a,b)=> (a.status==='online'?0:1)-(b.status==='online'?0:1) || (b.tok_30d||0)-(a.tok_30d||0));
+      var html='';
       for(var i=0;i<Math.min(20,rows.length);i++){
         var p=rows[i]; var eff=(p.churn_30d? (p.cost_30d/(p.churn_30d/1000)).toFixed(2) : '—');
-        html+='<tr><td><b>'+(p.name||'?')+'</b></td><td class="num">'+fmtTok(p.tok_today||0)+'</td><td class="num">'+fmtTok(p.tok_30d||0)+'</td><td class="num">'+(eff!=='—'?'$'+eff+'/k':eff)+'</td><td class="num">'+(p.projects||0)+'</td><td><span class="pill '+(p.status==='online'?'grn':'dim')+'">'+(p.status||'offline')+'</span></td><td class="dim" style="font-size:11px">'+String(p.updated_at||'').slice(0,16).replace('T',' ')+'</td></tr>';
+        html+='<tr class="social-row" data-peer="'+String(p.name||'?').replace(/"/g,'&quot;')+'" style="cursor:pointer"><td><b>'+(p.name||'?')+'</b></td><td class="num">'+fmtTok(p.tok_today||0)+'</td><td class="num">'+fmtTok(p.tok_30d||0)+'</td><td class="num">'+(eff!=='—'?'$'+eff+'/k':eff)+'</td><td class="num">'+(p.projects||0)+'</td><td><span class="pill '+(p.status==='online'?'grn':'dim')+'">'+(p.status||'offline')+'</span></td><td class="dim" style="font-size:11px">'+String(p.updated_at||'').slice(0,16).replace('T',' ')+'</td></tr>';
       }
       tb.innerHTML=html;
       var cnt=document.getElementById('socialCount'); if(cnt) cnt.textContent=rows.filter(r=>r.status==='online').length;
     }).catch(()=>{});
   }
   setTimeout(refreshPeersLive, 1200);
-  // integra con softRefresh: cuando haga fetch, también refresca peers live
   var _origSoft=window.softRefresh; if(typeof _origSoft==='function'){ window.softRefresh=async function(){ await _origSoft(); setTimeout(refreshPeersLive, 600); }; }
 })();
 </script></body></html>"""
