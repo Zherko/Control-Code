@@ -342,6 +342,28 @@ try:
             except: proj_net[short][rk]=0
 except: proj_net={}
 proj_net_json = json.dumps(proj_net, ensure_ascii=False)
+# neto por modelo estimado por reparto diario (coste_modelo_día / coste_total_día * neto_día)
+model_net = {}
+try:
+    # day_net ya viene de Inicio (90d), si no existe lo recalculamos rápido como suma proj_net 30d
+    try: _dn = day_net
+    except NameError: _dn = {}
+    if not _dn:
+        _dn = {d: sum(proj_net.get(s,{}).get("total",0) for s in proj_net) for d in daily}  # fallback
+    for rk in ["d1","d7","d30","total"]:
+        days = {"d1":d1,"d7":d7,"d30":d30,"total":all_days}[rk]
+        acc = {}
+        for d in days:
+            tot_c = daily.get(d,{}).get("c",0); tot_n = _dn.get(d,0)
+            if not tot_c or not tot_n: continue
+            for m, vals in daily.get(d,{}).get("mod",{}).items():
+                c = vals[1]
+                if not c: continue
+                acc[m] = acc.get(m,0) + tot_n * (c / tot_c)
+        for m, net in acc.items():
+            model_net.setdefault(m, {})[rk] = int(round(net))
+except: model_net={}
+model_net_json = json.dumps(model_net, ensure_ascii=False)
 
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
@@ -529,6 +551,7 @@ __INICIO_CARDS__
 var D = __DATA__;
 var EVO = __EVO_DATA__;
 var PROJ_NET = __PROJ_NET__;
+var MODEL_NET = __MODEL_NET__;
 var SKILLS_ALL = __SKILL_JSON__;
 var NAMES = {total:"todas las fechas con datos",d30:"ultimos 30 dias",d7:"ultimos 7 dias",d1:"hoy"};
 function fmt(n){if(n>=1e9)return(n/1e9).toFixed(2)+"B";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(0)+"K";return""+n;}
@@ -557,7 +580,7 @@ function render(r){
   var mxp = 1, j; for(j=0;j<R.proj.length;j++){if(R.proj[j][1]>mxp)mxp=R.proj[j][1];}
   var ph="",mh="";
   for(j=0;j<R.proj.length;j++){var p=R.proj[j]; var net=(PROJ_NET[p[0]]&&PROJ_NET[p[0]][r]!=null)?PROJ_NET[p[0]][r]:null; var eff=(net&&net>0)?"$"+(p[2]/(net/1000)).toFixed(2)+"/k":"—"; ph+="<tr><td>"+p[0]+"</td><td class='num'>"+fmt(p[1])+"</td><td class='num'>$"+p[2].toFixed(2)+"</td><td class='num'>"+avg(p[2],p[3])+"</td><td class='num'>"+p[3]+"</td><td class='num'>"+eff+"</td><td>"+bar(p[1]/mxp*100)+"</td></tr>";}
-  for(j=0;j<R.mod.length;j++){var m=R.mod[j];mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td class='num' style='color:var(--dim)'>—</td><td></td></tr>";}
+  for(j=0;j<R.mod.length;j++){var m=R.mod[j]; var mnet=(MODEL_NET[m[0]]&&MODEL_NET[m[0]][r]!=null)?MODEL_NET[m[0]][r]:null; var meff=(mnet&&mnet>0)?"$"+(m[2]/(mnet/1000)).toFixed(2)+"/k":"—"; mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td class='num'>"+meff+"</td><td></td></tr>";}
   var pe=document.getElementById("projs"), me=document.getElementById("mods");
   if(pe) pe.innerHTML = ph || "<tr><td colspan=6>sin datos en este rango</td></tr>";
   if(me) me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>";
@@ -767,7 +790,7 @@ var INFO={
   autores:{t:'Por autor · 30 días',h:'<p><b>Neto</b> = líneas añadidas − borradas que sobreviven. <b>$/k</b> = tu parte del coste / neto. <b>Rework</b> = borradas/añadidas (estable &lt;20% ideal).</p><p><b>Interpreta:</b> $/k bajo + neto alto + rework bajo = eficiente. Muchos commits no implica mejor, mira neto.</p><p>100% local con <code>git log --since=30 days</code>, sin API.</p>'},
   actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
   proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k neto</b> = coste / 1.000 líneas netas git de ese proyecto/rango (menor es mejor, neto de <code>git log --numstat</code>). Barra = peso. Clic cabecera para ordenar.</p>'},
-  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p>Compara coste/msg entre modelos: un modelo barato con muchos msgs puede salir mejor que uno caro.</p>'},
+  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k neto (est.)</b> = coste / neto estimado (reparto diario: neto_día * coste_modelo_día / coste_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente en tu uso real.</p>'},
   tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
   git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
   agentes:{t:'Agentes',h:'<p>26 agentes definidos en <code>~/.config/opencode/opencode.json</code>. Mode = primary/subagent, Tools = qué puede usar.</p><p>Inventario vivo: lo que realmente tienes disponible.</p>'},
@@ -793,6 +816,7 @@ doc = doc.replace("__NAGENTS__", str(len(agents))).replace("__NSKILLS__", str(le
 doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
 doc = doc.replace("__EVO_DATA__", inicio_chart_json)
 doc = doc.replace("__PROJ_NET__", proj_net_json)
+doc = doc.replace("__MODEL_NET__", model_net_json)
 doc = doc.replace("__SKILL_JSON__", json.dumps([{"id": s["id"], "scope": s["scope"], "desc": s["desc"]} for s in skill_rows], ensure_ascii=False))
 out = os.path.join(ROOT, "dashboard.html")
 open(out, "w", encoding="utf-8").write(doc)
