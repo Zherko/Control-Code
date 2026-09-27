@@ -439,6 +439,103 @@ try:
 except: agent_churn={}
 agent_churn_json = json.dumps(agent_churn, ensure_ascii=False)
 
+# coaching Inicio: sigue / vigila / corta (determinista, sin LLM)
+inicio_coaching_html = ""
+try:
+    # --- sigue ---
+    sigue_msg = "Sigue aprovechando el caché"
+    sigue_detail = ""
+    try:
+        h = hit if 'hit' in locals() else 0
+        if h and h > 90:
+            sigue_msg = f"Cache {h:.1f}%"
+            sigue_detail = "sigues reutilizando contexto — mantén sesiones largas con --pure"
+        else:
+            # mejor proyecto 30d por $/k
+            best=None; bestv=1e9
+            d30_churn = proj_churn
+            d30_cost = R["d30"][3] if len(R["d30"])>3 else {}
+            for name, vals in d30_cost.items():
+                churn = d30_churn.get(name,{}).get("d30",0) if isinstance(vals, list) else 0
+                cost = vals[1] if isinstance(vals, list) and len(vals)>1 else 0
+                if churn and churn>500 and cost:
+                    eff = cost/(churn/1000)
+                    if eff < bestv:
+                        bestv=eff; best=name
+            if best:
+                sigue_msg = f"{best} ${bestv:.2f}/k"
+                sigue_detail = "tu proyecto más eficiente 30d — patrón a repetir"
+    except: pass
+    # --- vigila ---
+    vigila_msg = "Rework estable"
+    vigila_detail = ""
+    try:
+        rw = rework_team if 'rework_team' in locals() else 0
+        if rw > 25:
+            vigila_msg = f"Rework {rw:.1f}%"
+            vigila_detail = "borras 1 de cada 4 líneas — revisa espec antes de picar"
+        else:
+            # peor autor
+            worst=None; worstv=0
+            for k in author_add:
+                a=author_add.get(k,0); d=author_del.get(k,0)
+                if a>200:
+                    r=d/max(a,1)*100
+                    if r>worstv:
+                        worstv=r; worst=author_display.get(k,k)
+            if worst and worstv>30:
+                vigila_msg = f"{worst} {worstv:.0f}% rework"
+                vigila_detail = "re-escribe mucho — afina prompt/router"
+            else:
+                vigila_msg = f"Coste 7d ${R['d7'][1]:.2f}"
+                vigila_detail = "pico semanal controlado"
+    except: pass
+    # --- corta ---
+    corta_msg = "Sin desperdicio detectado"
+    corta_detail = ""
+    try:
+        # proyecto con coste sin churn
+        d30_cost2 = R["d30"][3] if len(R["d30"])>3 else {}
+        waste=None
+        for name, vals in d30_cost2.items():
+            cost = vals[1] if isinstance(vals, list) and len(vals)>1 else 0
+            churn = proj_churn.get(name,{}).get("d30",0) if 'proj_churn' in locals() else 0
+            if cost>0.5 and churn==0:
+                waste=name; break
+        if waste:
+            corta_msg = f"{waste} sin churn"
+            corta_detail = f"${d30_cost2[waste][1]:.2f} sin líneas — corta o mueve"
+        else:
+            # familia más cara por M
+            worstAg=None; worstM=0
+            d30_agt = R["d30"][5] if len(R["d30"])>5 else {}
+            for name, vals in d30_agt.items():
+                tokens = vals[0] if isinstance(vals, list) and len(vals)>0 else 0
+                cost = vals[1] if isinstance(vals, list) and len(vals)>1 else 0
+                msgs = vals[2] if isinstance(vals, list) and len(vals)>2 else 0
+                if tokens and cost and msgs >5:
+                    perM = cost/(tokens/1e6) if tokens else 0
+                    if perM>worstM:
+                        worstM=perM; worstAg=name
+            if worstAg and worstM>30:
+                corta_msg = f"{worstAg} ${worstM:.0f}/M"
+                corta_detail = "familia más cara por M — limita para tareas simples"
+            else:
+                # mcp sin uso
+                if 'mcps' in locals() and mcps and not tool_cnt:
+                    corta_msg = "MCP sin uso"
+                    corta_detail = "dead weight — revisa Plataforma"
+    except: pass
+    inicio_coaching_html = (
+        f"<div class='grid' style='grid-template-columns:repeat(3,1fr);margin:12px 0'>"
+        f"<div class='card' style='border-left:4px solid var(--grn)'><h3>✓ Sigue así</h3><div style='font-weight:700;margin:6px 0'>{html.escape(sigue_msg)}</div><div class='small'>{html.escape(sigue_detail)}</div></div>"
+        f"<div class='card' style='border-left:4px solid #d29922'><h3>⚠ Vigila</h3><div style='font-weight:700;margin:6px 0'>{html.escape(vigila_msg)}</div><div class='small'>{html.escape(vigila_detail)}</div></div>"
+        f"<div class='card' style='border-left:4px solid #f85149'><h3>✕ Corta</h3><div style='font-weight:700;margin:6px 0'>{html.escape(corta_msg)}</div><div class='small'>{html.escape(corta_detail)}</div></div>"
+        f"</div>"
+    )
+except Exception as e:
+    inicio_coaching_html = f"<p class='small'>coaching no disponible: {html.escape(str(e)[:60])}</p>"
+
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
 payload = {
@@ -586,6 +683,7 @@ td{padding:9px 8px;border-bottom:1px solid var(--line)}tr:last-child td{border-b
 <div id="view-inicio" class="view on">
 <div class="grid">__CARDS__</div>
 __INICIO_CARDS__
+__INICIO_COACHING__
 <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
 <button class="ghost small" data-evo="30" style="border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:20px;padding:7px 14px;cursor:pointer">30 días</button>
 <button class="ghost small" data-evo="90" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:7px 14px;cursor:pointer">90 días (semanal)</button>
@@ -907,7 +1005,7 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
 </script></body></html>"""
 
 doc = TPL.replace("__MSGS__", str(msgs)).replace("__NOW__", now).replace("__CARDS__", cards_html)
-doc = doc.replace("__INICIO_CARDS__", inicio_cards_html).replace("__INICIO_AUTHORS__", inicio_author_rows)
+doc = doc.replace("__INICIO_CARDS__", inicio_cards_html).replace("__INICIO_AUTHORS__", inicio_author_rows).replace("__INICIO_COACHING__", inicio_coaching_html)
 doc = doc.replace("__CACHE_HTML__", cache_html).replace("__TOOL_ROWS__", tool_rows).replace("__GIT_ROWS__", git_html_rows)
 doc = doc.replace("__GOALS__", goal_rows).replace("__CRONS__", cron_rows)
 doc = doc.replace("__NGOALS__", str(len(goals))).replace("__NCRONS__", str(len(crons)))
