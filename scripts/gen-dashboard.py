@@ -396,28 +396,28 @@ try:
             except: proj_churn[short][rk]=0
 except: proj_churn={}
 proj_churn_json = json.dumps(proj_churn, ensure_ascii=False)
-# churn por modelo estimado por reparto diario (coste_modelo_día / coste_total_día * churn_día)
+# churn por modelo estimado por reparto diario — por TOKENS no por coste (coste daba mismo $/k para todos, bug)
 model_churn = {}
 try:
     try: _dc = day_churn
     except NameError: _dc = {}
     if not _dc:
-        _dc = {d: sum(proj_churn.get(s,{}).get("total",0) for s in proj_churn) for d in daily}  # fallback
+        _dc = {d: sum(proj_churn.get(s,{}).get("total",0) for s in proj_churn) for d in daily}
     for rk in ["d1","d7","d30","total"]:
         days = {"d1":d1,"d7":d7,"d30":d30,"total":all_days}[rk]
         acc = {}
         for d in days:
-            tot_c = daily.get(d,{}).get("c",0); tot_n = _dc.get(d,0)
-            if not tot_c or not tot_n: continue
+            tot_t = daily.get(d,{}).get("t",0); tot_n = _dc.get(d,0)
+            if not tot_t or not tot_n: continue
             for m, vals in daily.get(d,{}).get("mod",{}).items():
-                c = vals[1]
-                if not c: continue
-                acc[m] = acc.get(m,0) + tot_n * (c / tot_c)
+                t = vals[0]
+                if not t: continue
+                acc[m] = acc.get(m,0) + tot_n * (t / tot_t)
         for m, churn in acc.items():
             model_churn.setdefault(m, {})[rk] = int(round(churn))
 except: model_churn={}
 model_churn_json = json.dumps(model_churn, ensure_ascii=False)
-# agent churn por agente estimado idem modelo
+# agent churn por familia estimado idem modelo — por TOKENS (reparto por coste daba eff idéntico = tot_c/(tot_n/1000))
 agent_churn = {}
 try:
     try: _dc2 = day_churn
@@ -428,12 +428,12 @@ try:
         days = {"d1":d1,"d7":d7,"d30":d30,"total":all_days}[rk]
         acc = {}
         for d in days:
-            tot_c = daily.get(d,{}).get("c",0); tot_n = _dc2.get(d,0)
-            if not tot_c or not tot_n: continue
+            tot_t = daily.get(d,{}).get("t",0); tot_n = _dc2.get(d,0)
+            if not tot_t or not tot_n: continue
             for ag, vals in daily.get(d,{}).get("agt",{}).items():
-                c = vals[1]
-                if not c: continue
-                acc[ag] = acc.get(ag,0) + tot_n * (c / tot_c)
+                t = vals[0]
+                if not t: continue
+                acc[ag] = acc.get(ag,0) + tot_n * (t / tot_t)
         for ag, churn in acc.items():
             agent_churn.setdefault(ag, {})[rk] = int(round(churn))
 except: agent_churn={}
@@ -793,8 +793,8 @@ __INICIO_COACHING__
 <p class="rangelabel" id="rangelabel"></p>
 <h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
 <h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="projs"></tbody></table></div>
-<h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="mods"></tbody></table></div>
-<h2>Por agente — familia (del rango) <button class="info-btn" data-info="agente">i</button></h2><div class="panel"><table><tr><th>Familia</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="agts"></tbody></table></div>
+<h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn (est.)</th><th></th></tr><tbody id="mods"></tbody></table></div>
+<h2>Por agente — familia (del rango) <button class="info-btn" data-info="agente">i</button></h2><div class="panel"><table><tr><th>Familia</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn (est.)</th><th></th></tr><tbody id="agts"></tbody></table></div>
 </div>
 
 <div id="view-plataforma" class="view">
@@ -1130,8 +1130,8 @@ var INFO={
   autores:{t:'Por autor · 30 días',h:'<p><b>Churn</b> = add+del tocadas (esfuerzo real, no lo que sobrevive). <b>$/k churn</b> = tu parte del coste / churn. <b>Rework</b> = del/add (estable &lt;20% ideal).</p><p><b>Interpreta:</b> $/k bajo + churn alto + rework bajo = eficiente. Neto se degrada, churn no — compara churn.</p><p>100% local con <code>git log --since=30 days</code>, sin API.</p>'},
   actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
   proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k churn</b> = coste / 1.000 líneas tocadas (add+del) git de ese proyecto/rango (menor es mejor). Barra = peso. Clic cabecera para ordenar.</p><p>Churn no se degrada como neto: mide esfuerzo, no lo que sobrevive.</p>'},
-  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario: churn_día * coste_modelo_día / coste_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente. Churn estable entre fases.</p>'},
-  agente:{t:'Por agente (familia)',h:'<p>Familia = agente root + todos sus subagentes (<code>session.parent_id</code> hasta el root). No es el agente suelto: <b>general</b> hijo de <b>Enjambre</b> cuenta en <b>Enjambre (familia)</b>.</p><p>Unifica cualquier orquestador (Enjambre, build con hijos, etc.) sin hardcodear nombres — 274 sesiones con padre en tu DB.</p><p><b>$/k churn (est.)</b> = coste familia / churn estimado (reparto diario: churn_día * coste_familia_día / coste_total_día). Compara familias, no agentes sueltos.</p><p>Fuente 100% local: <code>message.agent</code> + <code>session.parent_id</code>.</p>'},
+  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario por <b>tokens</b>: churn_día * tokens_modelo_día / tokens_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente.</p>'},
+  agente:{t:'Por agente (familia)',h:'<p>Familia = agente root + todos sus subagentes (<code>session.parent_id</code> hasta el root). No es el agente suelto: <b>general</b> hijo de <b>Enjambre</b> cuenta en <b>Enjambre (familia)</b>.</p><p>Unifica cualquier orquestador (Enjambre, build con hijos, etc.) sin hardcodear nombres.</p><p><b>$/k churn (est.)</b> = coste familia / churn estimado (reparto diario por <b>tokens</b>: churn_día * tokens_familia_día / tokens_total_día). Ya no se reparte por coste — así dos familias el mismo día no dan idéntico 0.70/k.</p><p>Fuente 100% local: <code>message.agent</code> + <code>session.parent_id</code>.</p>'},
   tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
   git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
   agentes:{t:'Agentes',h:'<p>26 agentes definidos en <code>~/.config/opencode/opencode.json</code>. Mode = primary/subagent, Tools = qué puede usar.</p><p>Inventario vivo: lo que realmente tienes disponible.</p>'},
