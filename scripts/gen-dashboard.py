@@ -226,13 +226,15 @@ try:
             all_paths = sorted(s)[:14]
         except: all_paths = []
     import collections
-    author_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> net
+    author_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> net (solo rework)
+    author_churn_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> churn a+d
     author_commits = collections.Counter()
     author_add = collections.Counter()
     author_del = collections.Counter()
     author_display = {}  # lower -> display original
     day_authors = collections.defaultdict(set)  # day -> set(lower)
     day_net = collections.Counter()
+    day_churn = collections.Counter()
     # parse git log por proyecto últimos 90d
     for p in all_paths:
         if not os.path.isdir(os.path.join(p, ".git")): continue
@@ -253,25 +255,28 @@ try:
             if cur_key is None or cur_day is None: continue
             parts = line.split()
             if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
-                a, d = int(parts[0]), int(parts[1]); net = a - d
+                a, d = int(parts[0]), int(parts[1]); net = a - d; churn = a + d
                 author_daily[cur_key][cur_day] += net
+                author_churn_daily[cur_key][cur_day] += churn
                 author_add[cur_key] += a; author_del[cur_key] += d
                 day_net[cur_day] += net
+                day_churn[cur_day] += churn
         # también commits sin numstat (binarios) ya contados arriba, pero sin net
     # rangos
     d90 = [(today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(90)]
     d30 = [(today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)]
     total_cost_30 = sum(daily.get(d, {}).get("c", 0) for d in d30)
     total_net_30 = sum(day_net.get(d, 0) for d in d30)
-    inicio_team_eff = (total_cost_30 / (total_net_30/1000)) if total_net_30 > 0 else 0
+    total_churn_30 = sum(day_churn.get(d, 0) for d in d30)
+    inicio_team_eff = (total_cost_30 / (total_churn_30/1000)) if total_churn_30 > 0 else 0
     rework_team = (sum(author_del.values()) / max(sum(author_add.values()),1) * 100) if author_add else 0
     # cards
     def fmt_eff(v): return f"${v:.2f}/k" if v else "—"
     inicio_cards_html = (
         f"<div class='grid' style='grid-template-columns:repeat(4,1fr)'>"
-        f"<div class='card'><h3>Eficiencia equipo</h3><div class='big'>{fmt_eff(inicio_team_eff)}</div><div class='row'><span>coste/neto 30d</span><span>{'menor es mejor'}</span></div></div>"
+        f"<div class='card'><h3>Eficiencia equipo</h3><div class='big'>{fmt_eff(inicio_team_eff)}</div><div class='row'><span>coste/churn 30d</span><span>{'menor es mejor'}</span></div></div>"
         f"<div class='card'><h3>Coste 30d</h3><div class='big'>${total_cost_30:.2f}</div><div class='row'><span>{fmt_tok(int(sum(daily.get(d,{}).get('t',0) for d in d30)))} tokens</span><span>{sum(daily.get(d,{}).get('k',0) for d in d30)} msgs</span></div></div>"
-        f"<div class='card'><h3>Impacto neto 30d</h3><div class='big'>{fmt_tok(total_net_30) if total_net_30 else '0'}</div><div class='row'><span>líneas netas git</span><span>{len(author_daily)} autores</span></div></div>"
+        f"<div class='card'><h3>Impacto churn 30d</h3><div class='big'>{fmt_tok(total_churn_30) if total_churn_30 else '0'}</div><div class='row'><span>líneas tocadas add+del</span><span>{len(author_churn_daily)} autores</span></div></div>"
         f"<div class='card'><h3>Rework 30d</h3><div class='big'>{rework_team:.1f}%</div><div class='row'><span>del/add</span><span>{sum(author_del.values())}/{sum(author_add.values())}</span></div></div>"
         f"</div>"
     )
@@ -281,15 +286,15 @@ try:
     hist = []
     solo = (len([k for k in author_commits if k=="zherko"]) > 0)  # tu eres el equipo
     for d in reversed(d30):
-        c = daily.get(d, {}).get("c", 0); net = day_net.get(d, 0)
-        team_e = (c / (net/1000)) if net > 0 else None
+        c = daily.get(d, {}).get("c", 0); churn = day_churn.get(d, 0)
+        team_e = (c / (churn/1000)) if churn > 0 else None
         if solo:
             row = {"d": d[5:], "zherko": round(team_e,2) if team_e is not None else None}
         else:
             row = {"d": d[5:], "team": round(team_e,2) if team_e is not None else None}
             n_auth = len(day_authors.get(d, [])) or 1
             for a in top_authors:
-                l = author_daily.get(a, {}).get(d, 0)
+                l = author_churn_daily.get(a, {}).get(d, 0)
                 if l:
                     ca = c / n_auth
                     row[a] = round(ca / (l/1000),2) if l != 0 else None
@@ -301,16 +306,17 @@ try:
     rows = []
     for a in author_commits.most_common(12):
         key = a[0]; commits = a[1]
+        churn = sum(author_churn_daily.get(key, {}).get(d,0) for d in d30)
         net = sum(author_daily.get(key, {}).get(d,0) for d in d30)
         add_g = author_add.get(key,0); del_g = author_del.get(key,0)
         rework_a = min(del_g / max(add_g,1)*100, 100) if add_g else 0
         if net < 0: rework_a = 100
-        days_active = sum(1 for d in d30 if author_daily.get(key, {}).get(d,0) != 0)
-        cost_a = sum((daily.get(d,{}).get("c",0) / max(len(day_authors.get(d,[])),1)) for d in d30 if author_daily.get(key,{}).get(d,0)!=0)
-        eff_a = (cost_a / (net/1000)) if net > 0 else 0
+        days_active = sum(1 for d in d30 if author_churn_daily.get(key, {}).get(d,0) != 0)
+        cost_a = sum((daily.get(d,{}).get("c",0) / max(len(day_authors.get(d,[])),1)) for d in d30 if author_churn_daily.get(key,{}).get(d,0)!=0)
+        eff_a = (cost_a / (churn/1000)) if churn > 0 else 0
         disp = author_display.get(key, key)
-        net_fmt = (f"+{fmt_tok(net)}" if net>0 else fmt_tok(net)) if net else "0"
-        rows.append((disp, net, eff_a, rework_a, commits, days_active, net_fmt))
+        churn_fmt = fmt_tok(churn) if churn else "0"
+        rows.append((disp, churn, eff_a, rework_a, commits, days_active, churn_fmt))
     rows.sort(key=lambda x: x[2] if x[2] else 999)
     inicio_author_rows = "".join(
         f"<tr><td>{html.escape(r[0])}</td><td class='num'>{r[6]}</td><td class='num'>{fmt_eff(r[2])}</td><td class='num'>{r[3]:.1f}%</td><td class='num'>{r[4]}</td><td class='num'>{r[5]}/30</td></tr>"
@@ -321,13 +327,13 @@ except Exception as e:
     inicio_chart_json = "[]"
     inicio_author_rows = "<tr><td colspan=6>—</td></tr>"
 
-# neto por proyecto y rango para $/k en Consumo (local, sin API)
-proj_net = {}
+# churn por proyecto y rango para $/k en Consumo (a+d, local, sin API)
+proj_churn = {}
 try:
     for p in all_paths:
         if not os.path.isdir(os.path.join(p, ".git")): continue
         short = os.path.basename(p.rstrip("/\\")) or p
-        proj_net[short] = {}
+        proj_churn[short] = {}
         for rk, since in [("d1","1 day"),("d7","7 days"),("d30","30 days"),("total",None)]:
             try:
                 args = ["git","-C",p,"log","--numstat","--pretty=format:"]
@@ -338,32 +344,31 @@ try:
                     sp=line.split()
                     if len(sp)>=2 and sp[0].isdigit(): a+=int(sp[0])
                     if len(sp)>=2 and sp[1].isdigit(): d+=int(sp[1])
-                proj_net[short][rk] = a - d
-            except: proj_net[short][rk]=0
-except: proj_net={}
-proj_net_json = json.dumps(proj_net, ensure_ascii=False)
-# neto por modelo estimado por reparto diario (coste_modelo_día / coste_total_día * neto_día)
-model_net = {}
+                proj_churn[short][rk] = a + d
+            except: proj_churn[short][rk]=0
+except: proj_churn={}
+proj_churn_json = json.dumps(proj_churn, ensure_ascii=False)
+# churn por modelo estimado por reparto diario (coste_modelo_día / coste_total_día * churn_día)
+model_churn = {}
 try:
-    # day_net ya viene de Inicio (90d), si no existe lo recalculamos rápido como suma proj_net 30d
-    try: _dn = day_net
-    except NameError: _dn = {}
-    if not _dn:
-        _dn = {d: sum(proj_net.get(s,{}).get("total",0) for s in proj_net) for d in daily}  # fallback
+    try: _dc = day_churn
+    except NameError: _dc = {}
+    if not _dc:
+        _dc = {d: sum(proj_churn.get(s,{}).get("total",0) for s in proj_churn) for d in daily}  # fallback
     for rk in ["d1","d7","d30","total"]:
         days = {"d1":d1,"d7":d7,"d30":d30,"total":all_days}[rk]
         acc = {}
         for d in days:
-            tot_c = daily.get(d,{}).get("c",0); tot_n = _dn.get(d,0)
+            tot_c = daily.get(d,{}).get("c",0); tot_n = _dc.get(d,0)
             if not tot_c or not tot_n: continue
             for m, vals in daily.get(d,{}).get("mod",{}).items():
                 c = vals[1]
                 if not c: continue
                 acc[m] = acc.get(m,0) + tot_n * (c / tot_c)
-        for m, net in acc.items():
-            model_net.setdefault(m, {})[rk] = int(round(net))
-except: model_net={}
-model_net_json = json.dumps(model_net, ensure_ascii=False)
+        for m, churn in acc.items():
+            model_churn.setdefault(m, {})[rk] = int(round(churn))
+except: model_churn={}
+model_churn_json = json.dumps(model_churn, ensure_ascii=False)
 
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
@@ -513,8 +518,8 @@ __INICIO_CARDS__
 <button class="ghost small" data-evo="30" style="border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:20px;padding:7px 14px;cursor:pointer">30 días</button>
 <button class="ghost small" data-evo="90" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:7px 14px;cursor:pointer">90 días (semanal)</button>
 </div>
-<h2>Evolución eficiencia · $/k neto (menor es mejor) <button class="info-btn" data-info="evo">i</button></h2><div class="panel"><div id="evoChart" class="evo-wrap"></div><div id="evoLegend" class="evo-legend"></div><p class="small">Fijo ancho 100% sin scroll. Ventana 30d por autor (coste del día repartido equitativamente entre autores activos). 90d agrega por semana.</p></div>
-<h2>Por autor · 30 días <button class="info-btn" data-info="autores">i</button></h2><div class="panel"><table><tr><th>Autor</th><th class="num">Neto</th><th class="num">$/k neto</th><th class="num">Rework</th><th class="num">Commits</th><th class="num">Días</th></tr><tbody>__INICIO_AUTHORS__</tbody></table><p class="small">Ordenado por eficiencia ($/k menor primero). Neto = líneas +/− que se quedan. Rework = del/add. Sin API Git, solo <code>git log --numstat</code>.</p></div>
+<h2>Evolución eficiencia · $/k churn (menor es mejor) <button class="info-btn" data-info="evo">i</button></h2><div class="panel"><div id="evoChart" class="evo-wrap"></div><div id="evoLegend" class="evo-legend"></div><p class="small">Fijo ancho 100% sin scroll. Churn = add+del tocadas. Ventana 30d por autor (coste del día repartido equitativamente entre autores activos). 90d agrega por semana.</p></div>
+<h2>Por autor · 30 días <button class="info-btn" data-info="autores">i</button></h2><div class="panel"><table><tr><th>Autor</th><th class="num">Churn</th><th class="num">$/k churn</th><th class="num">Rework</th><th class="num">Commits</th><th class="num">Días</th></tr><tbody>__INICIO_AUTHORS__</tbody></table><p class="small">Ordenado por eficiencia ($/k menor primero). Churn = add+del tocadas (no se degrada). Rework = del/add. Sin API Git, solo <code>git log --numstat</code>.</p></div>
 <h2>Resumen rápido</h2><div class="panel"><p class="small">Consumo: <span id="sumConsumo">—</span> · Recursos: __NAGENTS__ agentes · __NSKILLS__ skills · Tareas: __NGOALS__ goals · __NCRONS__ crons · <a href="#" onclick="document.querySelector('[data-v=consumo]').click();return false;" style="color:var(--acc)">ir a Consumo</a></p></div>
 </div>
 
@@ -523,8 +528,8 @@ __INICIO_CARDS__
 <div class="tabs" id="tabs"><button data-r="total" class="on">Total</button><button data-r="d30">Ultimos 30 dias</button><button data-r="d7">Ultimos 7 dias</button><button data-r="d1">Hoy</button></div>
 <p class="rangelabel" id="rangelabel"></p>
 <h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
-<h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k neto</th><th></th></tr><tbody id="projs"></tbody></table></div>
-<h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k neto</th><th></th></tr><tbody id="mods"></tbody></table></div>
+<h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="projs"></tbody></table></div>
+<h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="mods"></tbody></table></div>
 <h2>Herramientas & caché <button class="info-btn" data-info="tools">i</button></h2>__CACHE_HTML__<div class="panel"><table><tr><th>Herramienta</th><th class="num">Llamadas</th><th></th></tr>__TOOL_ROWS__</table><p class="small">MCPs con 0 llamadas = dead weight. Cache alto (>90%) = bien. Datos de <code>part.type=tool</code> + <code>message.tokens.cache</code>.</p></div>
 <h2>Git · últimos 7 días <button class="info-btn" data-info="git">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Commits</th><th class="num">Líneas +</th><th class="num">Líneas -</th></tr>__GIT_ROWS__</table><p class="small">Si un proyecto no es git, muestra 0. Coste por commit = coste 7d / commits.</p></div>
 </div>
@@ -550,8 +555,8 @@ __INICIO_CARDS__
 <script>
 var D = __DATA__;
 var EVO = __EVO_DATA__;
-var PROJ_NET = __PROJ_NET__;
-var MODEL_NET = __MODEL_NET__;
+var PROJ_CHURN = __PROJ_CHURN__;
+var MODEL_CHURN = __MODEL_CHURN__;
 var SKILLS_ALL = __SKILL_JSON__;
 var NAMES = {total:"todas las fechas con datos",d30:"ultimos 30 dias",d7:"ultimos 7 dias",d1:"hoy"};
 function fmt(n){if(n>=1e9)return(n/1e9).toFixed(2)+"B";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(0)+"K";return""+n;}
@@ -579,8 +584,8 @@ function render(r){
   }
   var mxp = 1, j; for(j=0;j<R.proj.length;j++){if(R.proj[j][1]>mxp)mxp=R.proj[j][1];}
   var ph="",mh="";
-  for(j=0;j<R.proj.length;j++){var p=R.proj[j]; var net=(PROJ_NET[p[0]]&&PROJ_NET[p[0]][r]!=null)?PROJ_NET[p[0]][r]:null; var eff=(net&&net>0)?"$"+(p[2]/(net/1000)).toFixed(2)+"/k":"—"; ph+="<tr><td>"+p[0]+"</td><td class='num'>"+fmt(p[1])+"</td><td class='num'>$"+p[2].toFixed(2)+"</td><td class='num'>"+avg(p[2],p[3])+"</td><td class='num'>"+p[3]+"</td><td class='num'>"+eff+"</td><td>"+bar(p[1]/mxp*100)+"</td></tr>";}
-  for(j=0;j<R.mod.length;j++){var m=R.mod[j]; var mnet=(MODEL_NET[m[0]]&&MODEL_NET[m[0]][r]!=null)?MODEL_NET[m[0]][r]:null; var meff=(mnet&&mnet>0)?"$"+(m[2]/(mnet/1000)).toFixed(2)+"/k":"—"; mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td class='num'>"+meff+"</td><td></td></tr>";}
+  for(j=0;j<R.proj.length;j++){var p=R.proj[j]; var churn=(PROJ_CHURN[p[0]]&&PROJ_CHURN[p[0]][r]!=null)?PROJ_CHURN[p[0]][r]:null; var eff=(churn&&churn>0)?"$"+(p[2]/(churn/1000)).toFixed(2)+"/k":"—"; ph+="<tr><td>"+p[0]+"</td><td class='num'>"+fmt(p[1])+"</td><td class='num'>$"+p[2].toFixed(2)+"</td><td class='num'>"+avg(p[2],p[3])+"</td><td class='num'>"+p[3]+"</td><td class='num'>"+eff+"</td><td>"+bar(p[1]/mxp*100)+"</td></tr>";}
+  for(j=0;j<R.mod.length;j++){var m=R.mod[j]; var mchurn=(MODEL_CHURN[m[0]]&&MODEL_CHURN[m[0]][r]!=null)?MODEL_CHURN[m[0]][r]:null; var meff=(mchurn&&mchurn>0)?"$"+(m[2]/(mchurn/1000)).toFixed(2)+"/k":"—"; mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td class='num'>"+meff+"</td><td></td></tr>";}
   var pe=document.getElementById("projs"), me=document.getElementById("mods");
   if(pe) pe.innerHTML = ph || "<tr><td colspan=6>sin datos en este rango</td></tr>";
   if(me) me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>";
@@ -786,11 +791,11 @@ window.addEventListener('resize', function(){ var active=document.querySelector(
 setTimeout(restoreSorts, 300);
 // info popups mismo estilo web
 var INFO={
-  evo:{t:'Evolución eficiencia',h:'<p><b>Qué ves:</b> $ por cada 1.000 líneas netas que se quedan (coste de <code>opencode.db</code> / neto de <code>git log --numstat</code>).</p><p><b>Cómo leerlo:</b> línea baja y estable = vas directo, gastas poco por lo que entregas. Pico = día con mucho coste y poco neto (muchas correcciones).</p><ul><li><b>Equipo</b> = media diaria</li><li>Top autores = reparto equitativo del coste del día</li><li>90d agrega por semana para mantener ancho fijo sin scroll</li></ul><p>Ventana 30d: no penaliza antigüedad, todos comparables.</p>'},
-  autores:{t:'Por autor · 30 días',h:'<p><b>Neto</b> = líneas añadidas − borradas que sobreviven. <b>$/k</b> = tu parte del coste / neto. <b>Rework</b> = borradas/añadidas (estable &lt;20% ideal).</p><p><b>Interpreta:</b> $/k bajo + neto alto + rework bajo = eficiente. Muchos commits no implica mejor, mira neto.</p><p>100% local con <code>git log --since=30 days</code>, sin API.</p>'},
+  evo:{t:'Evolución eficiencia',h:'<p><b>Qué ves:</b> $ por cada 1.000 líneas <b>tocadas</b> (churn = add+del de <code>git log --numstat</code> / coste de <code>opencode.db</code>).</p><p><b>Por qué churn:</b> neto (add−del) se hunde cuando reescribes — al inicio todo queda, luego solo sustituyes y neto→0 aunque trabajes. Churn cuenta lo que tocas (quitas+pones) y no se degrada con la edad del proyecto.</p><p><b>Cómo leerlo:</b> línea baja y estable = gastas poco por lo que tocas. Pico = día caro con poco churn.</p><ul><li><b>Equipo</b> = media diaria</li><li>Top autores = reparto equitativo del coste del día</li><li>90d agrega por semana (sin scroll)</li></ul><p>Ventana 30d: todos comparables.</p>'},
+  autores:{t:'Por autor · 30 días',h:'<p><b>Churn</b> = add+del tocadas (esfuerzo real, no lo que sobrevive). <b>$/k churn</b> = tu parte del coste / churn. <b>Rework</b> = del/add (estable &lt;20% ideal).</p><p><b>Interpreta:</b> $/k bajo + churn alto + rework bajo = eficiente. Neto se degrada, churn no — compara churn.</p><p>100% local con <code>git log --since=30 days</code>, sin API.</p>'},
   actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
-  proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k neto</b> = coste / 1.000 líneas netas git de ese proyecto/rango (menor es mejor, neto de <code>git log --numstat</code>). Barra = peso. Clic cabecera para ordenar.</p>'},
-  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k neto (est.)</b> = coste / neto estimado (reparto diario: neto_día * coste_modelo_día / coste_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente en tu uso real.</p>'},
+  proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k churn</b> = coste / 1.000 líneas tocadas (add+del) git de ese proyecto/rango (menor es mejor). Barra = peso. Clic cabecera para ordenar.</p><p>Churn no se degrada como neto: mide esfuerzo, no lo que sobrevive.</p>'},
+  modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario: churn_día * coste_modelo_día / coste_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente. Churn estable entre fases.</p>'},
   tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
   git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
   agentes:{t:'Agentes',h:'<p>26 agentes definidos en <code>~/.config/opencode/opencode.json</code>. Mode = primary/subagent, Tools = qué puede usar.</p><p>Inventario vivo: lo que realmente tienes disponible.</p>'},
@@ -815,8 +820,8 @@ doc = doc.replace("__AGENTS__", agent_rows).replace("__MCPS__", mcp_rows).replac
 doc = doc.replace("__NAGENTS__", str(len(agents))).replace("__NSKILLS__", str(len(skill_rows))).replace("__NMCP__", str(len(mcps)))
 doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
 doc = doc.replace("__EVO_DATA__", inicio_chart_json)
-doc = doc.replace("__PROJ_NET__", proj_net_json)
-doc = doc.replace("__MODEL_NET__", model_net_json)
+doc = doc.replace("__PROJ_CHURN__", proj_churn_json)
+doc = doc.replace("__MODEL_CHURN__", model_churn_json)
 doc = doc.replace("__SKILL_JSON__", json.dumps([{"id": s["id"], "scope": s["scope"], "desc": s["desc"]} for s in skill_rows], ensure_ascii=False))
 out = os.path.join(ROOT, "dashboard.html")
 open(out, "w", encoding="utf-8").write(doc)
