@@ -331,7 +331,7 @@ try:
         for rk, since in [("d1","1 day"),("d7","7 days"),("d30","30 days"),("total",None)]:
             try:
                 args = ["git","-C",p,"log","--numstat","--pretty=format:"]
-                if since: args.insert(3, "--since="+since)
+                if since: args.insert(4, "--since="+since)
                 ns = subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL, errors="ignore")
                 a = d = 0
                 for line in ns.splitlines():
