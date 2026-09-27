@@ -38,12 +38,14 @@ for sid, tc, d in cur.fetchall():
     cwd = ((j.get("path") or {}).get("cwd")) or wt
     short = os.path.basename(cwd.rstrip("/\\")) or cwd
     m = j.get("modelID", "?")
-    ag = j.get("agent", "?") or "?"
+    ag = (j.get("agent", "?") or "?").strip()
+    ag_norm = ag.lower()
+    if ag_norm == "enjambre": ag_norm = "Enjambre"
     e = daily.setdefault(day, {"t": 0, "c": 0.0, "k": 0, "proj": {}, "mod": {}, "agt": {}})
     e["t"] += t; e["c"] += c; e["k"] += 1
     p = e["proj"].setdefault(short, [0, 0.0, 0]); p[0] += t; p[1] += c; p[2] += 1
     mb = e["mod"].setdefault(m, [0, 0.0, 0]); mb[0] += t; mb[1] += c; mb[2] += 1
-    ab = e["agt"].setdefault(ag, [0, 0.0, 0]); ab[0] += t; ab[1] += c; ab[2] += 1
+    ab = e["agt"].setdefault(ag_norm, [0, 0.0, 0]); ab[0] += t; ab[1] += c; ab[2] += 1
     if day == datetime.date.today().strftime("%Y-%m-%d"):
         h = hourly.setdefault(hr, [0, 0.0, 0]); h[0] += t; h[1] += c; h[2] += 1
 con.close()
