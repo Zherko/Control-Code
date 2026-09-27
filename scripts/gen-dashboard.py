@@ -18,6 +18,49 @@ cur.execute("SELECT id, project_id FROM session")
 sess2proj = dict(cur.fetchall())
 cur.execute("SELECT id, worktree FROM project")
 proj2wt = dict(cur.fetchall())
+cur.execute("SELECT id, parent_id FROM session")
+sess_parent = {r[0]: r[1] for r in cur.fetchall()}
+# mapa session -> agent (primer mensaje assistant, ordenado por tiempo)
+sess_agent = {}
+enjambre_sessions = set()
+try:
+    cur.execute("SELECT session_id, data, time_created FROM message WHERE json_extract(data,'$.role')='assistant' ORDER BY time_created ASC")
+    for sid2, d2, _tc2 in cur.fetchall():
+        try:
+            j2 = json.loads(d2)
+            ag2 = (j2.get("agent") or "").strip()
+            if ag2 and sid2 not in sess_agent:
+                sess_agent[sid2] = ag2
+            if ag2 and ag2.lower() == "enjambre":
+                enjambre_sessions.add(sid2)
+        except: pass
+    # también sesiones que contienen Enjambre aunque no sea el primer mensaje (sesiones mixtas build+Enjambre)
+    cur.execute("SELECT DISTINCT session_id FROM message WHERE lower(json_extract(data,'$.agent'))='enjambre'")
+    for (sid_e,) in cur.fetchall():
+        enjambre_sessions.add(sid_e)
+except: pass
+def root_agent_of(sid, fallback_ag):
+    # familia genérica: si la cadena de padres contiene una sesión Enjambre, la familia es Enjambre
+    # esto une cualquier subagente (general/explore) nacido bajo Enjambre, sin hardcodear más casos
+    # para otros orquestadores futuros, el mismo patrón vale: basta con que la sesión padre esté marcada
+    cur_sid = sid
+    chain = [cur_sid]
+    seen = set()
+    for _ in range(20):
+        par = sess_parent.get(cur_sid)
+        if not par or par in seen: break
+        seen.add(cur_sid)
+        chain.append(par)
+        cur_sid = par
+    for c in chain:
+        if c in enjambre_sessions:
+            return "Enjambre"
+    # si no hay Enjambre en la cadena, familia = agente del mensaje (normalizado)
+    ag = (fallback_ag or "?").strip()
+    n = ag.lower()
+    if n == "enjambre": return "Enjambre"
+    return n
+
 cur.execute("SELECT session_id, time_created, data FROM message")
 daily, hourly = {}, {}
 tot_t, tot_c, msgs = 0, 0.0, 0
@@ -39,13 +82,12 @@ for sid, tc, d in cur.fetchall():
     short = os.path.basename(cwd.rstrip("/\\")) or cwd
     m = j.get("modelID", "?")
     ag = (j.get("agent", "?") or "?").strip()
-    ag_norm = ag.lower()
-    if ag_norm == "enjambre": ag_norm = "Enjambre"
+    fam = root_agent_of(sid, ag)
     e = daily.setdefault(day, {"t": 0, "c": 0.0, "k": 0, "proj": {}, "mod": {}, "agt": {}})
     e["t"] += t; e["c"] += c; e["k"] += 1
     p = e["proj"].setdefault(short, [0, 0.0, 0]); p[0] += t; p[1] += c; p[2] += 1
     mb = e["mod"].setdefault(m, [0, 0.0, 0]); mb[0] += t; mb[1] += c; mb[2] += 1
-    ab = e["agt"].setdefault(ag_norm, [0, 0.0, 0]); ab[0] += t; ab[1] += c; ab[2] += 1
+    ab = e["agt"].setdefault(fam, [0, 0.0, 0]); ab[0] += t; ab[1] += c; ab[2] += 1
     if day == datetime.date.today().strftime("%Y-%m-%d"):
         h = hourly.setdefault(hr, [0, 0.0, 0]); h[0] += t; h[1] += c; h[2] += 1
 con.close()
@@ -559,7 +601,7 @@ __INICIO_CARDS__
 <h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
 <h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="projs"></tbody></table></div>
 <h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="mods"></tbody></table></div>
-<h2>Por agente (del rango) <button class="info-btn" data-info="agente">i</button></h2><div class="panel"><table><tr><th>Agente</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="agts"></tbody></table></div>
+<h2>Por agente — familia (del rango) <button class="info-btn" data-info="agente">i</button></h2><div class="panel"><table><tr><th>Familia</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="agts"></tbody></table></div>
 </div>
 
 <div id="view-plataforma" class="view">
@@ -847,7 +889,7 @@ var INFO={
   actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
   proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k churn</b> = coste / 1.000 líneas tocadas (add+del) git de ese proyecto/rango (menor es mejor). Barra = peso. Clic cabecera para ordenar.</p><p>Churn no se degrada como neto: mide esfuerzo, no lo que sobrevive.</p>'},
   modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario: churn_día * coste_modelo_día / coste_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente. Churn estable entre fases.</p>'},
-  agente:{t:'Por agente',h:'<p>Reparto por agente en el rango seleccionado. <b>Build</b> = agente por defecto, <b>enjambre</b> = orquestador, <b>general/explore</b> = subagentes que levanta enjambre (274 sesiones con <code>parent_id</code>).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario: churn_día * coste_agente_día / coste_total_día). Menor es mejor.</p><p>Compara <code>build</code> vs <code>enjambre</code> vs <code>general</code> para ver overhead: enjambre gasta solo en orquestar, los subagentes hacen el trabajo.</p><p>Fuente 100% local: <code>message.agent</code> de <code>opencode.db</code>.</p>'},
+  agente:{t:'Por agente (familia)',h:'<p>Familia = agente root + todos sus subagentes (<code>session.parent_id</code> hasta el root). No es el agente suelto: <b>general</b> hijo de <b>Enjambre</b> cuenta en <b>Enjambre (familia)</b>.</p><p>Unifica cualquier orquestador (Enjambre, build con hijos, etc.) sin hardcodear nombres — 274 sesiones con padre en tu DB.</p><p><b>$/k churn (est.)</b> = coste familia / churn estimado (reparto diario: churn_día * coste_familia_día / coste_total_día). Compara familias, no agentes sueltos.</p><p>Fuente 100% local: <code>message.agent</code> + <code>session.parent_id</code>.</p>'},
   tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
   git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
   agentes:{t:'Agentes',h:'<p>26 agentes definidos en <code>~/.config/opencode/opencode.json</code>. Mode = primary/subagent, Tools = qué puede usar.</p><p>Inventario vivo: lo que realmente tienes disponible.</p>'},
