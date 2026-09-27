@@ -696,7 +696,7 @@ function renderEvo(mode){
     if(keys.length===1 && keys[0]==='zherko'){ html='<span><i style="background:'+COLORS[0]+'"></i>zherko (equipo)</span>'; }
     else if(keys.length===1){ html='<span><i style="background:'+COLORS[0]+'"></i>'+keys[0]+'</span>'; }
     else { html='<span><i style="background:'+COLORS[0]+'"></i>Equipo</span>';
-    for(var ai=0;ai<authors.length;ai++){ html+='<span><i style="background:'+COLORS[(ai+1)%COLORS.length]+'"></i>'+authors[ai]+'</span>'; }
+    for(var ai=0;ai<authors.length;ai++){ if(authors[ai]==='team') continue; html+='<span><i style="background:'+COLORS[(ai+1)%COLORS.length]+'"></i>'+authors[ai]+'</span>'; } }
     leg.innerHTML=html;
   }
 }
