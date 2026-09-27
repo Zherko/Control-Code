@@ -38,10 +38,12 @@ for sid, tc, d in cur.fetchall():
     cwd = ((j.get("path") or {}).get("cwd")) or wt
     short = os.path.basename(cwd.rstrip("/\\")) or cwd
     m = j.get("modelID", "?")
-    e = daily.setdefault(day, {"t": 0, "c": 0.0, "k": 0, "proj": {}, "mod": {}})
+    ag = j.get("agent", "?") or "?"
+    e = daily.setdefault(day, {"t": 0, "c": 0.0, "k": 0, "proj": {}, "mod": {}, "agt": {}})
     e["t"] += t; e["c"] += c; e["k"] += 1
     p = e["proj"].setdefault(short, [0, 0.0, 0]); p[0] += t; p[1] += c; p[2] += 1
     mb = e["mod"].setdefault(m, [0, 0.0, 0]); mb[0] += t; mb[1] += c; mb[2] += 1
+    ab = e["agt"].setdefault(ag, [0, 0.0, 0]); ab[0] += t; ab[1] += c; ab[2] += 1
     if day == datetime.date.today().strftime("%Y-%m-%d"):
         h = hourly.setdefault(hr, [0, 0.0, 0]); h[0] += t; h[1] += c; h[2] += 1
 con.close()
@@ -78,7 +80,7 @@ except Exception as e:
 
 today = datetime.date.today()
 def agg(days):
-    pt, md = {}, {}
+    pt, md, ag = {}, {}, {}
     t = c = k = 0
     for d in days:
         e = daily.get(d)
@@ -88,7 +90,9 @@ def agg(days):
             b = pt.setdefault(n, [0, 0.0, 0]); b[0] += v[0]; b[1] += v[1]; b[2] += v[2]
         for n, v in e["mod"].items():
             b = md.setdefault(n, [0, 0.0, 0]); b[0] += v[0]; b[1] += v[1]; b[2] += v[2]
-    return t, c, k, pt, md
+        for n, v in e.get("agt",{}).items():
+            b = ag.setdefault(n, [0, 0.0, 0]); b[0] += v[0]; b[1] += v[1]; b[2] += v[2]
+    return t, c, k, pt, md, ag
 
 all_days = sorted(daily)
 d30 = [(today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)]
@@ -369,16 +373,39 @@ try:
             model_churn.setdefault(m, {})[rk] = int(round(churn))
 except: model_churn={}
 model_churn_json = json.dumps(model_churn, ensure_ascii=False)
+# agent churn por agente estimado idem modelo
+agent_churn = {}
+try:
+    try: _dc2 = day_churn
+    except NameError: _dc2 = {}
+    if not _dc2:
+        _dc2 = {d: sum(proj_churn.get(s,{}).get("total",0) for s in proj_churn) for d in daily}
+    for rk in ["d1","d7","d30","total"]:
+        days = {"d1":d1,"d7":d7,"d30":d30,"total":all_days}[rk]
+        acc = {}
+        for d in days:
+            tot_c = daily.get(d,{}).get("c",0); tot_n = _dc2.get(d,0)
+            if not tot_c or not tot_n: continue
+            for ag, vals in daily.get(d,{}).get("agt",{}).items():
+                c = vals[1]
+                if not c: continue
+                acc[ag] = acc.get(ag,0) + tot_n * (c / tot_c)
+        for ag, churn in acc.items():
+            agent_churn.setdefault(ag, {})[rk] = int(round(churn))
+except: agent_churn={}
+agent_churn_json = json.dumps(agent_churn, ensure_ascii=False)
 
 # calendario: el render es JS (estilo Pomodoro), no pre-render estático
 
 payload = {
     "daily": {d: {"t": e["t"], "c": round(e["c"], 4), "k": e["k"],
         "proj": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(e["proj"].items(), key=lambda x: -x[1][0])],
-        "mod": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(e["mod"].items(), key=lambda x: -x[1][0])]} for d, e in daily.items()},
+        "mod": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(e["mod"].items(), key=lambda x: -x[1][0])],
+        "agt": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(e.get("agt",{}).items(), key=lambda x: -x[1][0])]} for d, e in daily.items()},
     "ranges": {k: {"t": v[0], "c": round(v[1], 4), "k": v[2],
         "proj": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(v[3].items(), key=lambda x: -x[1][0])],
-        "mod": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(v[4].items(), key=lambda x: -x[1][0])]}
+        "mod": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(v[4].items(), key=lambda x: -x[1][0])],
+        "agt": [[n, p[0], round(p[1], 4), p[2]] for n, p in sorted(v[5].items(), key=lambda x: -x[1][0])]}
         for k, v in R.items()},
     "hourly": {h: {"t": v[0], "c": round(v[1], 4), "k": v[2]} for h, v in sorted(hourly.items())},
 }
@@ -530,6 +557,7 @@ __INICIO_CARDS__
 <h2>Actividad diaria · ultimos 7 dias (fija) <button class="info-btn" data-info="actividad">i</button></h2><div class="panel"><div class="days" id="days"></div></div>
 <h2 id="t-proj">Por proyecto <button class="info-btn" data-info="proyecto">i</button></h2><div class="panel"><table><tr><th>Proyecto</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="projs"></tbody></table></div>
 <h2>Por modelo (del rango) <button class="info-btn" data-info="modelo">i</button></h2><div class="panel"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="mods"></tbody></table></div>
+<h2>Por agente (del rango) <button class="info-btn" data-info="agente">i</button></h2><div class="panel"><table><tr><th>Agente</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th><th class="num">$/k churn</th><th></th></tr><tbody id="agts"></tbody></table></div>
 </div>
 
 <div id="view-plataforma" class="view">
@@ -560,6 +588,7 @@ var D = __DATA__;
 var EVO = __EVO_DATA__;
 var PROJ_CHURN = __PROJ_CHURN__;
 var MODEL_CHURN = __MODEL_CHURN__;
+var AGENT_CHURN = __AGENT_CHURN__;
 var SKILLS_ALL = __SKILL_JSON__;
 var NAMES = {total:"todas las fechas con datos",d30:"ultimos 30 dias",d7:"ultimos 7 dias",d1:"hoy"};
 function fmt(n){if(n>=1e9)return(n/1e9).toFixed(2)+"B";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(0)+"K";return""+n;}
@@ -586,12 +615,14 @@ function render(r){
     for(j=0;j<days.length;j++){var x=days[j],d=document.createElement("div");d.className="db";d.title=x.l+": "+fmt(x.t)+" / $"+x.c.toFixed(2);d.innerHTML="<i style='height:"+Math.max(x.t/mx*100,1.5).toFixed(1)+"%'></i><span>"+x.l+"</span>";box.appendChild(d);}
   }
   var mxp = 1, j; for(j=0;j<R.proj.length;j++){if(R.proj[j][1]>mxp)mxp=R.proj[j][1];}
-  var ph="",mh="";
+  var ph="",mh="",ah="";
   for(j=0;j<R.proj.length;j++){var p=R.proj[j]; var churn=(PROJ_CHURN[p[0]]&&PROJ_CHURN[p[0]][r]!=null)?PROJ_CHURN[p[0]][r]:null; var eff=(churn&&churn>0)?"$"+(p[2]/(churn/1000)).toFixed(2)+"/k":"—"; ph+="<tr><td>"+p[0]+"</td><td class='num'>"+fmt(p[1])+"</td><td class='num'>$"+p[2].toFixed(2)+"</td><td class='num'>"+avg(p[2],p[3])+"</td><td class='num'>"+p[3]+"</td><td class='num'>"+eff+"</td><td>"+bar(p[1]/mxp*100)+"</td></tr>";}
   for(j=0;j<R.mod.length;j++){var m=R.mod[j]; var mchurn=(MODEL_CHURN[m[0]]&&MODEL_CHURN[m[0]][r]!=null)?MODEL_CHURN[m[0]][r]:null; var meff=(mchurn&&mchurn>0)?"$"+(m[2]/(mchurn/1000)).toFixed(2)+"/k":"—"; mh+="<tr><td>"+m[0]+"</td><td class='num'>"+fmt(m[1])+"</td><td class='num'>$"+m[2].toFixed(2)+"</td><td class='num'>"+avg(m[2],m[3])+"</td><td class='num'>"+m[3]+"</td><td class='num'>"+meff+"</td><td></td></tr>";}
-  var pe=document.getElementById("projs"), me=document.getElementById("mods");
+  for(j=0;j<R.agt.length;j++){var a=R.agt[j]; var achurn=(AGENT_CHURN[a[0]]&&AGENT_CHURN[a[0]][r]!=null)?AGENT_CHURN[a[0]][r]:null; var aeff=(achurn&&achurn>0)?"$"+(a[2]/(achurn/1000)).toFixed(2)+"/k":"—"; ah+="<tr><td><code>"+a[0]+"</code></td><td class='num'>"+fmt(a[1])+"</td><td class='num'>$"+a[2].toFixed(2)+"</td><td class='num'>"+avg(a[2],a[3])+"</td><td class='num'>"+a[3]+"</td><td class='num'>"+aeff+"</td><td></td></tr>";}
+  var pe=document.getElementById("projs"), me=document.getElementById("mods"), ae=document.getElementById("agts");
   if(pe) pe.innerHTML = ph || "<tr><td colspan=6>sin datos en este rango</td></tr>";
   if(me) me.innerHTML = mh || "<tr><td colspan=5>sin datos</td></tr>";
+  if(ae) ae.innerHTML = ah || "<tr><td colspan=6>sin datos</td></tr>";
   var tp=document.getElementById("t-proj"); if(tp) tp.textContent="Por proyecto ("+label+")";
   try{localStorage.setItem('pc_range', r);}catch(e){}
   setTimeout(restoreSorts, 0);
@@ -668,6 +699,11 @@ function calDetail(iso){
   if(rec.mod && rec.mod.length){
     html+='<div class="panel" style="margin-top:10px"><table><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th></tr>';
     for(var j=0;j<rec.mod.length;j++){var m=rec.mod[j]; var aa=m[3]?m[2]/m[3]:0; var av2=aa.toFixed(4); html+='<tr><td>'+m[0]+'</td><td class="num">'+fmt(m[1])+'</td><td class="num">$'+m[2].toFixed(2)+'</td><td class="num">$'+av2+'</td><td class="num">'+m[3]+'</td></tr>';}
+    html+='</table></div>';
+  }
+  if(rec.agt && rec.agt.length){
+    html+='<div class="panel" style="margin-top:10px"><table><tr><th>Agente</th><th class="num">Tokens</th><th class="num">Coste</th><th class="num">Coste/msg</th><th class="num">Msgs</th></tr>';
+    for(var k=0;k<rec.agt.length;k++){var ag=rec.agt[k]; var aa2=ag[3]?ag[2]/ag[3]:0; var av3=aa2.toFixed(4); html+='<tr><td><code>'+ag[0]+'</code></td><td class="num">'+fmt(ag[1])+'</td><td class="num">$'+ag[2].toFixed(2)+'</td><td class="num">$'+av3+'</td><td class="num">'+ag[3]+'</td></tr>';}
     html+='</table></div>';
   }
   det.innerHTML=html;
@@ -803,6 +839,7 @@ var INFO={
   actividad:{t:'Actividad diaria',h:'<p>Barras de los últimos 7 días con tokens y coste. Fija, no cambia con los tabs de abajo. Es tu pulso diario.</p><p>Barra alta = día intenso. Útil para detectar picos de consumo.</p>'},
   proyecto:{t:'Por proyecto',h:'<p>Reparto por proyecto en el rango seleccionado (tabs Total/30d/7d/Hoy).</p><p><b>Coste/msg</b> = precio medio por consulta. <b>$/k churn</b> = coste / 1.000 líneas tocadas (add+del) git de ese proyecto/rango (menor es mejor). Barra = peso. Clic cabecera para ordenar.</p><p>Churn no se degrada como neto: mide esfuerzo, no lo que sobrevive.</p>'},
   modelo:{t:'Por modelo',h:'<p>Mismo que Por proyecto pero por modelo (<code>mimo-v2.5</code>, <code>muse-spark</code>…).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario: churn_día * coste_modelo_día / coste_total_día). Menor es mejor. Es estimado porque git no guarda modelo.</p><p>Compara coste/msg + $/k est. para ver modelo más eficiente. Churn estable entre fases.</p>'},
+  agente:{t:'Por agente',h:'<p>Reparto por agente en el rango seleccionado. <b>Build</b> = agente por defecto, <b>enjambre</b> = orquestador, <b>general/explore</b> = subagentes que levanta enjambre (274 sesiones con <code>parent_id</code>).</p><p><b>$/k churn (est.)</b> = coste / churn estimado (reparto diario: churn_día * coste_agente_día / coste_total_día). Menor es mejor.</p><p>Compara <code>build</code> vs <code>enjambre</code> vs <code>general</code> para ver overhead: enjambre gasta solo en orquestar, los subagentes hacen el trabajo.</p><p>Fuente 100% local: <code>message.agent</code> de <code>opencode.db</code>.</p>'},
   tools:{t:'Herramientas & caché',h:'<p><b>Cache hit</b> = % de tokens leídos de caché (alto &gt;90% es bueno). <b>Herramientas</b> = llamadas totales.</p><p>Tabla = herramientas más usadas (<code>bash, read, edit</code>). Si ves MCP con 0 llamadas, es dead weight.</p>'},
   git:{t:'Git · 7 días',h:'<p>Commits y líneas +/− por proyecto en 7 días desde <code>git log --since=7 days --numstat</code>.</p><p>0 = no es repo git. Útil para cruzar coste vs actividad real en código.</p>'},
   agentes:{t:'Agentes',h:'<p>26 agentes definidos en <code>~/.config/opencode/opencode.json</code>. Mode = primary/subagent, Tools = qué puede usar.</p><p>Inventario vivo: lo que realmente tienes disponible.</p>'},
@@ -829,6 +866,7 @@ doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
 doc = doc.replace("__EVO_DATA__", inicio_chart_json)
 doc = doc.replace("__PROJ_CHURN__", proj_churn_json)
 doc = doc.replace("__MODEL_CHURN__", model_churn_json)
+doc = doc.replace("__AGENT_CHURN__", agent_churn_json)
 doc = doc.replace("__SKILL_JSON__", json.dumps([{"id": s["id"], "scope": s["scope"], "desc": s["desc"]} for s in skill_rows], ensure_ascii=False))
 out = os.path.join(ROOT, "dashboard.html")
 open(out, "w", encoding="utf-8").write(doc)
