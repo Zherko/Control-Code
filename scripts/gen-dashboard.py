@@ -717,6 +717,8 @@ try:
                 if bad: continue
                 clean.append(r_)
             social_peers = clean
+            # solo Google + no deleted (anon-f40e/bf63 fuera)
+            social_peers = [p for p in social_peers if p.get("status")!="deleted" and (p.get("google_sub") or p.get("avatar_url") or p.get("display_name"))]
             social_json = json.dumps(social_peers, ensure_ascii=False)
             # dedup 1 fila por google_sub o name (mismo brower no crea anon-f40e/bf63)
             _seen={}; _dedup=[]
@@ -747,7 +749,7 @@ try:
                 pill="grn" if st=="online" else "dim"
                 upd=str(p.get("updated_at",""))[:16].replace("T"," ")
                 rows.append(f"<tr class='social-row' data-peer='{peer_key}' style='cursor:pointer'><td>{name_cell}</td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
-            social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Conectar</td></tr>"
+            social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Continuar con Google</td></tr>"
     except Exception as e:
         social_peers_html = f"<tr><td colspan=7 class='dim'>peers no disponibles: {html.escape(str(e)[:60])}</td></tr>"
 except Exception as e:
@@ -1249,13 +1251,16 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
       profEl.style.display='none';
       if(gBtn) gBtn.style.display=isConnected()?'none':'inline-flex';
     }
+    // solo Google puede estar online
+    connBtn.style.display='none';
     if(on){
       var label=prof?prof.name:n;
-      connBtn.style.display='none'; disBtn.style.display='inline-block';
+      disBtn.style.display='inline-block';
       statusEl.textContent='Conectado como '+label+' — compartiendo tok hoy/30d, $/k churn, proyectos'; statusEl.style.color='var(--grn)';
     } else {
-      connBtn.style.display='inline-flex'; disBtn.style.display='none';
-      statusEl.textContent='No conectado — entra con Google o anónimo'; statusEl.style.color='var(--dim)';
+      disBtn.style.display='none';
+      if(!prof) statusEl.textContent='Solo Google — pulsa Continuar con Google'; else statusEl.textContent='No conectado';
+      statusEl.style.color='var(--dim)';
     }
   }
   updateUI();
@@ -1350,10 +1355,10 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   });
   function refreshPeersLive(){
     fetch(supaBase()+'/v1/databases/'+DB+'/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
-      var rows=j.rows||[]; if(!rows.length){ var tb0=document.getElementById('socialPeers'); if(tb0) tb0.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Conectar</td></tr>'; var c0=document.getElementById('socialCount'); if(c0) c0.textContent='0'; return; }
-      // filtra filas cifradas/corruptas (int se rompía -> peers no disponibles)
-      rows=rows.filter(function(p){ var bad=false; ['tok_today','tok_30d','churn_30d','projects'].forEach(function(k){ var v=p[k]; if(typeof v==='string' && v.length>20 && (v.indexOf('+')!==-1 || v.indexOf('/')!==-1)) bad=true; }); return !bad; });
-      if(!rows.length){ var tb1=document.getElementById('socialPeers'); if(tb1) tb1.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Conectar</td></tr>'; return; }
+      var rows=j.rows||[]; if(!rows.length){ var tb0=document.getElementById('socialPeers'); if(tb0) tb0.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Continuar con Google</td></tr>'; var c0=document.getElementById('socialCount'); if(c0) c0.textContent='0'; return; }
+      // filtra filas cifradas/corruptas (int se rompía -> peers no disponibles) + solo Google + no deleted
+      rows=rows.filter(function(p){ if((p.status||'')==='deleted') return false; if(!p.google_sub && !p.avatar_url && !p.display_name) return false; var bad=false; ['tok_today','tok_30d','churn_30d','projects'].forEach(function(k){ var v=p[k]; if(typeof v==='string' && v.length>20 && (v.indexOf('+')!==-1 || v.indexOf('/')!==-1)) bad=true; }); return !bad; });
+      if(!rows.length){ var tb1=document.getElementById('socialPeers'); if(tb1) tb1.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Continuar con Google</td></tr>'; return; }
       function si(v){ var n=Number(v); return isFinite(n)?Math.floor(n):0; }
       function sf(v){ var n=Number(v); return isFinite(n)?n:0; }
       var seen={}; var dedup=[]; rows.sort((a,b)=> String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
