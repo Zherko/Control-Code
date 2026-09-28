@@ -717,8 +717,8 @@ try:
                 if bad: continue
                 clean.append(r_)
             social_peers = clean
-            # solo Google + no deleted (anon-f40e/bf63 fuera)
-            social_peers = [p for p in social_peers if p.get("status")!="deleted" and (p.get("google_sub") or p.get("avatar_url") or p.get("display_name"))]
+            # solo Google (excluye anon-*) + no deleted
+            social_peers = [p for p in social_peers if p.get("status")!="deleted" and not str(p.get("name") or "").startswith("anon-")]
             social_json = json.dumps(social_peers, ensure_ascii=False)
             # dedup 1 fila por google_sub o name (mismo brower no crea anon-f40e/bf63)
             _seen={}; _dedup=[]
@@ -1356,8 +1356,8 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   function refreshPeersLive(){
     fetch(supaBase()+'/v1/databases/'+DB+'/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
       var rows=j.rows||[]; if(!rows.length){ var tb0=document.getElementById('socialPeers'); if(tb0) tb0.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Continuar con Google</td></tr>'; var c0=document.getElementById('socialCount'); if(c0) c0.textContent='0'; return; }
-      // filtra filas cifradas/corruptas (int se rompía -> peers no disponibles) + solo Google + no deleted
-      rows=rows.filter(function(p){ if((p.status||'')==='deleted') return false; if(!p.google_sub && !p.avatar_url && !p.display_name) return false; var bad=false; ['tok_today','tok_30d','churn_30d','projects'].forEach(function(k){ var v=p[k]; if(typeof v==='string' && v.length>20 && (v.indexOf('+')!==-1 || v.indexOf('/')!==-1)) bad=true; }); return !bad; });
+      // filtra filas cifradas/corruptas + solo Google (excluye anon-*) + no deleted
+      rows=rows.filter(function(p){ if((p.status||'')==='deleted') return false; if((p.name||'').startsWith('anon-')) return false; var bad=false; ['tok_today','tok_30d','churn_30d','projects'].forEach(function(k){ var v=p[k]; if(typeof v==='string' && v.length>20 && (v.indexOf('+')!==-1 || v.indexOf('/')!==-1)) bad=true; }); return !bad; });
       if(!rows.length){ var tb1=document.getElementById('socialPeers'); if(tb1) tb1.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Continuar con Google</td></tr>'; return; }
       function si(v){ var n=Number(v); return isFinite(n)?Math.floor(n):0; }
       function sf(v){ var n=Number(v); return isFinite(n)?n:0; }
