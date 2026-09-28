@@ -1246,7 +1246,7 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
     if(prof && prof.name){
       profEl.innerHTML='<img src="'+prof.picture+'" style="width:26px;height:26px;border-radius:50%;border:1px solid var(--line)"> <b>'+prof.name.replace(/</g,'&lt;')+'</b>';
       profEl.style.display='inline-flex';
-      if(gBtn) gBtn.style.display='none';
+      if(gBtn) gBtn.style.display=isConnected()?'none':'inline-flex';
     } else {
       profEl.style.display='none';
       if(gBtn) gBtn.style.display=isConnected()?'none':'inline-flex';
@@ -1294,9 +1294,16 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   }
   setTimeout(initGoogle, 1200);
   if(gBtn) gBtn.addEventListener('click', function(){
+    var prof=getProfile();
+    if(prof && prof.sub){
+      try{ localStorage.setItem('pc_social_connected','1'); localStorage.setItem('pc_social_name', prof.name); }catch(e){}
+      updateUI();
+      statusEl.textContent='Reconectando como '+prof.name+'…'; statusEl.style.color='var(--grn)';
+      pushPeer(prof.name,'online').then(()=>{ statusEl.textContent='Conectado como '+prof.name+' ✓'; updateUI(); setTimeout(()=>{ try{ softRefresh(); }catch(e){} }, 700); }).catch(()=>{ statusEl.textContent='Conectado local'; updateUI(); });
+      return;
+    }
     if(!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('.apps.googleusercontent.com')===-1){
-      // admin debe configurar centralizado — no pedir a cada usuario
-      try{ document.getElementById('infoTitle').textContent='Configuración Google pendiente'; document.getElementById('infoBody').innerHTML='<p>El admin debe poner el <code>GOOGLE_CLIENT_ID</code> en <code>.opencode/google_client_id.txt</code> o env <code>GOOGLE_CLIENT_ID</code> y regenerar con <code>python scripts/gen-dashboard.py</code>.</p><p>Créalo en <a href=\"https://console.cloud.google.com/apis/credentials\" target=\"_blank\" style=\"color:var(--acc)\">Google Cloud → Credenciales → Crear ID de OAuth 2.0 (Web)</a> con orígenes <code>http://localhost:8099</code> y tu dominio.</p><p>Mientras usa “Conectar anónimo”.</p>'; document.getElementById('infoModal').classList.add('on'); }catch(e){ alert('Google login no configurado por el admin'); }
+      try{ document.getElementById('infoTitle').textContent='Configuración Google pendiente'; document.getElementById('infoBody').innerHTML='<p>El admin debe poner el <code>GOOGLE_CLIENT_ID</code> en <code>.opencode/google_client_id.txt</code> o env <code>GOOGLE_CLIENT_ID</code> y regenerar con <code>python scripts/gen-dashboard.py</code>.</p><p>Créalo en <a href=\"https://console.cloud.google.com/apis/credentials\" target=\"_blank\" style=\"color:var(--acc)\">Google Cloud → Credenciales → Crear ID de OAuth 2.0 (Web)</a> con orígenes <code>http://localhost:3000</code> y tu dominio.</p>'; document.getElementById('infoModal').classList.add('on'); }catch(e){ alert('Google login no configurado'); }
       return;
     }
     if(!initGoogle()){ setTimeout(function(){ try{ google.accounts.id.prompt(); }catch(e){ alert('No se pudo abrir Google Login. Recarga.'); } }, 300); } else { try{ google.accounts.id.prompt(); }catch(e){} }
