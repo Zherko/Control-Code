@@ -650,6 +650,27 @@ git_html_rows = "".join(f"<tr><td title='{html.escape(p[4])}'>{html.escape(p[0])
 # --- SOCIAL MODULE START (compartimentado: borrar este bloque + TPL Social para quitar) ---
 SUPA_DB_ID = "db27"  # panel-control-social (owner admin) — todo admin como pide el usuario
 SOCIAL_KEY = "sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY"  # admin key directa
+# Google Client ID centralizado (un solo lugar). Prioridad: env > .opencode/google_client_id.txt > Supadata config
+GOOGLE_CLIENT_ID = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+if not GOOGLE_CLIENT_ID:
+    for _p in [os.path.join(ROOT, ".opencode", "google_client_id.txt"), os.path.expanduser("~/.config/opencode/google_client_id.txt")]:
+        try:
+            if os.path.exists(_p):
+                GOOGLE_CLIENT_ID = open(_p, encoding="utf-8").read().strip().split()[0]
+                if GOOGLE_CLIENT_ID: break
+        except: pass
+# si Supadata tiene config, la usa en build-time como fallback
+if not GOOGLE_CLIENT_ID:
+    try:
+        import urllib.request as _urllib
+        _url=f"https://pro-serv.tail9f39ff.ts.net/v1/databases/{SUPA_DB_ID}/rows?table=config&limit=10"
+        _req=_urllib.request.Request(_url, headers={"x-api-key":SOCIAL_KEY})
+        with _urllib.request.urlopen(_req, timeout=3) as _r:
+            _j=json.loads(_r.read().decode())
+            for _row in _j.get("rows") or []:
+                if str(_row.get("key") or _row.get("name"))=="google_client_id" and _row.get("value"):
+                    GOOGLE_CLIENT_ID=str(_row.get("value")).strip().split()[0]; break
+    except: pass
 social_self = {}
 social_peers = []
 social_peers_html = ""
@@ -1198,7 +1219,9 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
 // --- SOCIAL MODULE JS (Google Identity + dedup 1 cuenta = 1 fila) ---
 (function(){
   var SOCIAL_KEY="sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY", DB="db27";
-  var GOOGLE_CLIENT_ID=""; try{ var _gc=localStorage.getItem('pc_google_client_id'); if(_gc) GOOGLE_CLIENT_ID=_gc; }catch(e){}
+  var GOOGLE_CLIENT_ID="__GOOGLE_CLIENT_ID__"; try{ if(!GOOGLE_CLIENT_ID){ var _gc=localStorage.getItem('pc_google_client_id'); if(_gc) GOOGLE_CLIENT_ID=_gc; } }catch(e){}
+  // si sigue vacío, intenta Supadata config async
+  if(!GOOGLE_CLIENT_ID){ fetch(supaBase()+'/v1/databases/'+DB+'/rows?table=config&limit=10', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{ try{ for(var _r of (j.rows||[])){ if((_r.key||_r.name)=='google_client_id' && _r.value){ GOOGLE_CLIENT_ID=_r.value.trim(); try{ localStorage.setItem('pc_google_client_id', GOOGLE_CLIENT_ID);}catch(e){} break; } } }catch(e){} }).catch(()=>{}); }
   function supaBase(){ var h=location.hostname; if(h==='localhost' || h==='127.0.0.1') return ''; return 'https://pro-serv.tail9f39ff.ts.net'; }
   var connBtn=document.getElementById('socialConnect'), disBtn=document.getElementById('socialDisconnect'), statusEl=document.getElementById('socialStatus');
   var gBtn=document.getElementById('socialGoogle'), profEl=document.getElementById('socialProfile');
@@ -1267,9 +1290,8 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   setTimeout(initGoogle, 1200);
   if(gBtn) gBtn.addEventListener('click', function(){
     if(!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('.apps.googleusercontent.com')===-1){
-      var nid=prompt('Falta GOOGLE_CLIENT_ID. Ve a https://console.cloud.google.com/apis/credentials → Crear ID de OAuth 2.0 (tipo Web) y pega aquí el Client ID:','');
-      if(nid && nid.indexOf('.apps.googleusercontent.com')!==-1){ try{ localStorage.setItem('pc_google_client_id', nid.trim()); }catch(e){} location.reload(); }
-      else if(nid!==null) alert('Client ID no válido');
+      // admin debe configurar centralizado — no pedir a cada usuario
+      try{ document.getElementById('infoTitle').textContent='Configuración Google pendiente'; document.getElementById('infoBody').innerHTML='<p>El admin debe poner el <code>GOOGLE_CLIENT_ID</code> en <code>.opencode/google_client_id.txt</code> o env <code>GOOGLE_CLIENT_ID</code> y regenerar con <code>python scripts/gen-dashboard.py</code>.</p><p>Créalo en <a href=\"https://console.cloud.google.com/apis/credentials\" target=\"_blank\" style=\"color:var(--acc)\">Google Cloud → Credenciales → Crear ID de OAuth 2.0 (Web)</a> con orígenes <code>http://localhost:8099</code> y tu dominio.</p><p>Mientras usa “Conectar anónimo”.</p>'; document.getElementById('infoModal').classList.add('on'); }catch(e){ alert('Google login no configurado por el admin'); }
       return;
     }
     if(!initGoogle()){ setTimeout(function(){ try{ google.accounts.id.prompt(); }catch(e){ alert('No se pudo abrir Google Login. Recarga.'); } }, 300); } else { try{ google.accounts.id.prompt(); }catch(e){} }
@@ -1372,6 +1394,7 @@ doc = doc.replace("__SOCIAL_YOU_EFF__", f"${social_self.get('eff',0):.2f}/k" if 
 doc = doc.replace("__SOCIAL_YOU_COST_TODAY__", f"${social_self.get('cost_today',0):.2f}")
 doc = doc.replace("__SOCIAL_YOU_COST_30__", f"${social_self.get('cost_30d',0):.2f}")
 # inyecta self y peers para JS live (si key local)
+doc = doc.replace("__GOOGLE_CLIENT_ID__", GOOGLE_CLIENT_ID or "")
 doc = doc.replace("__SOCIAL_SELF_JSON__", social_self_json)
 doc = doc.replace("__SOCIAL_JSON__", social_json)
 doc = doc.replace("__DATA__", json.dumps(payload, separators=(",", ":")))
