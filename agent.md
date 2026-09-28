@@ -49,6 +49,7 @@ Panel Control/
 5. **Estilo:** hereda tema oscuro OpenCode. Nuevos paneles usan `.card/.panel/.num/bar`. Tablas `table-layout:fixed` + `col` fijas, `tabular-nums`. No librerías externas.
 6. **Sin inventar:** `jobs.json` vacío → `0 crons — crea uno con /skill_cron`. `pending_tasks.json` vacío → `sin pendientes`. No fake data.
 7. **Módulos compartimentados:** cada feature aisalada en bloque `// MODULE START/END` (PENDING, SOCIAL, REALTIME). Quitar = borrar bloque + HTML + fichero sin tocar el resto.
+8. **Localhost canónico:** siempre `http://localhost:3000/dashboard.html` vía `/skill_control` (o `/skill_centro_control`). No usar `8099` ni puertos alternativos sin actualizar `GOOGLE_CLIENT_ID` y `serve.py` — el OAuth solo está autorizado para `3000`/`127.0.0.1:3000`.
 
 ## Módulos compartimentados
 - **PENDING:** `.opencode/pending_tasks.json` formato `{"project","date":"YYYY-MM-DD","subject","desc","status":"open|done"}` + `.opencode/skills/skill_pending/SKILL.md` (título obligatorio `Nombre proyecto::fecha::asunto`). Tabla en Tareas con `thead/tbody` y filtro por `td` para no romper sort.

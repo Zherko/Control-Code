@@ -1,38 +1,40 @@
 ﻿---
 name: skill_centro_control
-description: Lanza el Panel Control dashboard local (alias de skill_control)
+description: Lanza el Panel Control dashboard local (alias de skill_control - canonico 3000)
 metadata:
-  version: "1.0"
+  version: "1.1"
   trigger: /skill_centro_control
 ---
 
-# Skill Control â€” /skill_centro_control
+# Skill Control — /skill_centro_control (alias)
 
-Lanza el Centro de Control local-first en `http://localhost:8099/dashboard.html`.
+Alias de `/skill_control` — mismo comportamiento, mismo localhost canonico.
 
-## QuÃ© hace
-1. Regenera `dashboard.html` con `python scripts/gen-dashboard.py` (lee `~/.local/share/opencode/opencode.db` + `~/.config/opencode/opencode.json` + `git log`)
-2. Sirve `Panel Control` en `http://localhost:8099` con `python -m http.server 8099`
-3. Abre el navegador automÃ¡ticamente
+Lanza el Centro de Control local-first en `http://localhost:3000/dashboard.html` (**canonico**, `http://localhost:8099` redirige).
+
+## Que hace
+1. Regenera `dashboard.html` con `python scripts/gen-dashboard.py`
+2. Sirve `Panel Control` en `http://localhost:3000` con `python scripts/serve.py` (proxy CORS Supadata)
+3. Abre el navegador automaticamente en `http://localhost:3000/dashboard.html`
 
 Uso:
-- `/skill_centro_control` â€” regenera y lanza (si ya estÃ¡ en 8099, solo regenera)
-- `/skill_centro_control --regen` â€” solo regenera sin servir
-- `/skill_centro_control --open` â€” solo abre http://localhost:8099/dashboard.html
+- `/skill_centro_control` — regenera y lanza (si ya esta en 3000, solo regenera)
+- `/skill_centro_control --regen` — solo regenera sin servir
+- `/skill_centro_control --open` — solo abre http://localhost:3000/dashboard.html
 
 ## Comandos
 
 ```powershell
 # regenera
 python scripts/gen-dashboard.py
-# sirve (desde Panel Control)
-python -m http.server 8099
+# sirve - CANONICO 3000
+python scripts/serve.py
 # abre
-start http://localhost:8099/dashboard.html
+start http://localhost:3000/dashboard.html
 ```
 
 El agente al recibir `/skill_centro_control` debe ejecutar en orden:
 1. `python scripts/gen-dashboard.py` en `C:\Proyectos\Skills\Panel Control`
-2. Verificar puerto 8099 libre, lanzar `python -m http.server 8099` en background si no estÃ¡
-3. Responder con URL lista: `http://localhost:8099/dashboard.html` + `dashboard.html` regenerado OK
-
+2. Verificar puerto **3000** libre, lanzar `python scripts/serve.py` en background si no esta
+3. Responder con URL lista: `http://localhost:3000/dashboard.html` + `dashboard.html` regenerado OK
+4. **Siempre el mismo localhost** (`3000`) — no usar puertos alternativos
