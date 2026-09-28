@@ -274,15 +274,18 @@ try:
             all_paths = sorted(s)[:14]
         except: all_paths = []
     import collections
-    author_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> net (solo rework)
+    author_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> net
     author_churn_daily = collections.defaultdict(lambda: collections.defaultdict(int))  # key(lower) -> day -> churn a+d
     author_commits = collections.Counter()
     author_add = collections.Counter()
     author_del = collections.Counter()
+    author_add_30 = collections.Counter()
+    author_del_30 = collections.Counter()
     author_display = {}  # lower -> display original
     day_authors = collections.defaultdict(set)  # day -> set(lower)
     day_net = collections.Counter()
     day_churn = collections.Counter()
+    d30_set = set(d30)
     # parse git log por proyecto últimos 90d
     for p in all_paths:
         if not os.path.isdir(os.path.join(p, ".git")): continue
@@ -307,6 +310,8 @@ try:
                 author_daily[cur_key][cur_day] += net
                 author_churn_daily[cur_key][cur_day] += churn
                 author_add[cur_key] += a; author_del[cur_key] += d
+                if cur_day in d30_set:
+                    author_add_30[cur_key] += a; author_del_30[cur_key] += d
                 day_net[cur_day] += net
                 day_churn[cur_day] += churn
         # también commits sin numstat (binarios) ya contados arriba, pero sin net
@@ -317,7 +322,9 @@ try:
     total_net_30 = sum(day_net.get(d, 0) for d in d30)
     total_churn_30 = sum(day_churn.get(d, 0) for d in d30)
     inicio_team_eff = (total_cost_30 / (total_churn_30/1000)) if total_churn_30 > 0 else 0
-    rework_team = (sum(author_del.values()) / max(sum(author_add.values()),1) * 100) if author_add else 0
+    # rework 30d real — antes usaba 90d totals (bug 98.9% por Ainversion histórico 7.3M)
+    _r_add = sum(author_add_30.values()); _r_del = sum(author_del_30.values())
+    rework_team = (_r_del / max(_r_add,1) * 100) if _r_add else 0
     # cards
     def fmt_eff(v): return f"${v:.2f}/k" if v else "—"
     inicio_cards_html = (
@@ -325,7 +332,7 @@ try:
         f"<div class='card'><h3>Eficiencia equipo</h3><div class='big'>{fmt_eff(inicio_team_eff)}</div><div class='row'><span>coste/churn 30d</span><span>{'menor es mejor'}</span></div></div>"
         f"<div class='card'><h3>Coste 30d</h3><div class='big'>${total_cost_30:.2f}</div><div class='row'><span>{fmt_tok(int(sum(daily.get(d,{}).get('t',0) for d in d30)))} tokens</span><span>{sum(daily.get(d,{}).get('k',0) for d in d30)} msgs</span></div></div>"
         f"<div class='card'><h3>Impacto churn 30d</h3><div class='big'>{fmt_tok(total_churn_30) if total_churn_30 else '0'}</div><div class='row'><span>líneas tocadas add+del</span><span>{len(author_churn_daily)} autores</span></div></div>"
-        f"<div class='card'><h3>Rework 30d</h3><div class='big'>{rework_team:.1f}%</div><div class='row'><span>del/add</span><span>{sum(author_del.values())}/{sum(author_add.values())}</span></div></div>"
+        f"<div class='card'><h3>Rework 30d</h3><div class='big'>{rework_team:.1f}%</div><div class='row'><span>del/add</span><span>{_r_del}/{_r_add}</span></div></div>"
         f"</div>"
     )
     # serie histórica 90d para gráfica fija (ancho 100%, sin scroll) — 30d diario, 90d semanal
@@ -356,7 +363,7 @@ try:
         key = a[0]; commits = a[1]
         churn = sum(author_churn_daily.get(key, {}).get(d,0) for d in d30)
         net = sum(author_daily.get(key, {}).get(d,0) for d in d30)
-        add_g = author_add.get(key,0); del_g = author_del.get(key,0)
+        add_g = author_add_30.get(key,0); del_g = author_del_30.get(key,0)
         rework_a = min(del_g / max(add_g,1)*100, 100) if add_g else 0
         if net < 0: rework_a = 100
         days_active = sum(1 for d in d30 if author_churn_daily.get(key, {}).get(d,0) != 0)
@@ -697,7 +704,10 @@ now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 TPL = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="data:,">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <title>OpenCode · Centro de control</title>
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#262c36;--txt:#e6edf3;--dim:#8b949e;--acc:#58a6ff;--grn:#3fb950}
