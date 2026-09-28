@@ -649,7 +649,18 @@ git_html_rows = "".join(f"<tr><td title='{html.escape(p[4])}'>{html.escape(p[0])
 
 # --- SOCIAL MODULE START (compartimentado: borrar este bloque + TPL Social para quitar) ---
 SUPA_DB_ID = "db27"  # panel-control-social (owner admin) — todo admin como pide el usuario
-SOCIAL_KEY = "sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY"  # admin key directa
+# SOCIAL_KEY no hardcodeada: se lee de env SUPADATA_API_KEY o mcp supadata (opencode.json). Vacía = sin fetch build-time.
+def _load_social_key():
+    try:
+        import json as _js
+        for _p in [os.path.expanduser(r"~\.config\opencode\opencode.json"), os.path.join(ROOT, ".opencode", "opencode.json")]:
+            if os.path.exists(_p):
+                _c = _js.load(open(_p, encoding="utf-8-sig"))
+                _k = ((_c.get("mcp", {}) or {}).get("supadata", {}).get("environment", {}) or {}).get("SUPADATA_API_KEY", "")
+                if _k and str(_k).strip(): return str(_k).strip()
+    except: pass
+    return (os.environ.get("SUPADATA_API_KEY") or "").strip()
+SOCIAL_KEY = _load_social_key()
 # Google Client ID centralizado (un solo lugar). Prioridad: env > .opencode/google_client_id.txt > Supadata config
 GOOGLE_CLIENT_ID = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
 if not GOOGLE_CLIENT_ID:
@@ -659,12 +670,13 @@ if not GOOGLE_CLIENT_ID:
                 GOOGLE_CLIENT_ID = open(_p, encoding="utf-8").read().strip().split()[0]
                 if GOOGLE_CLIENT_ID: break
         except: pass
-# si Supadata tiene config, la usa en build-time como fallback
-if not GOOGLE_CLIENT_ID:
+# si Supadata tiene config, la usa en build-time como fallback (solo si hay SOCIAL_KEY)
+if not GOOGLE_CLIENT_ID and SOCIAL_KEY:
     try:
         import urllib.request as _urllib
         _url=f"https://pro-serv.tail9f39ff.ts.net/v1/databases/{SUPA_DB_ID}/rows?table=config&limit=10"
-        _req=_urllib.request.Request(_url, headers={"x-api-key":SOCIAL_KEY})
+        _h = {"Authorization": f"Bearer {SOCIAL_KEY}"} if SOCIAL_KEY.startswith("eyJ") else {"x-api-key": SOCIAL_KEY}
+        _req=_urllib.request.Request(_url, headers=_h)
         with _urllib.request.urlopen(_req, timeout=3) as _r:
             _j=json.loads(_r.read().decode())
             for _row in _j.get("rows") or []:
@@ -690,68 +702,70 @@ try:
     _eff = (_cost_30d / (_churn_30d/1000)) if _churn_30d else 0
     social_self = {"tok_today": _tok_today, "tok_30d": _tok_30d, "cost_today": round(_cost_today,4), "cost_30d": round(_cost_30d,4), "churn_30d": _churn_30d, "projects": _projects, "eff": round(_eff,2)}
     social_self_json = json.dumps(social_self, ensure_ascii=False)
-    # fetch peers snapshot (build-time) con key publica — no rompe si falla
-    try:
-        import urllib.request
-        url = f"https://pro-serv.tail9f39ff.ts.net/v1/databases/{SUPA_DB_ID}/rows?table=peers&limit=50&order=desc"
-        req=urllib.request.Request(url, headers={"x-api-key":SOCIAL_KEY})
-        with urllib.request.urlopen(req, timeout=4) as r:
-            j=json.loads(r.read().decode())
-            social_peers = j.get("rows") or []
-            # blindaje filas cifradas/corruptas (antes rompía int('7yvtLhn...') -> peers no disponibles)
-            def _si(v):
-                try: return int(float(v))
-                except: return 0
-            def _sf(v):
-                try: return float(v)
-                except: return 0.0
-            # filtra filas corruptas: si name es base64 largo sin sentido o ints no parseables, se salta
-            clean=[]
-            for r_ in social_peers:
-                # si algún campo numérico es string base64 con '+' '/' y len>20, es cifrado
-                bad=False
-                for k in ("tok_today","tok_30d","churn_30d","projects"):
-                    v=r_.get(k)
-                    if isinstance(v, str) and len(v)>20 and ('+' in v or '/' in v or v.endswith('==')):
-                        bad=True
-                if bad: continue
-                clean.append(r_)
-            social_peers = clean
-            # solo Google (excluye anon-*) + no deleted
-            social_peers = [p for p in social_peers if p.get("status")!="deleted" and not str(p.get("name") or "").startswith("anon-")]
-            social_json = json.dumps(social_peers, ensure_ascii=False)
-            # dedup 1 fila por google_sub o name (mismo brower no crea anon-f40e/bf63)
-            _seen={}; _dedup=[]
-            for _p in sorted(social_peers, key=lambda x: str(x.get("updated_at","")), reverse=True):
-                _k=str(_p.get("google_sub") or "").strip() or str(_p.get("name") or "").lower()
-                if _k not in _seen:
-                    _seen[_k]=1; _dedup.append(_p)
-            social_peers=_dedup
-            def _skey(x): return (0 if x.get("status")=="online" else 1, -_si(x.get("tok_30d") or 0))
-            social_peers_sorted = sorted(social_peers, key=_skey)
-            rows=[]
-            for p in social_peers_sorted[:20]:
-                dname=str(p.get("display_name") or p.get("name") or "?")[:32]
-                nm=html.escape(dname)
-                av=str(p.get("avatar_url") or "").strip()
-                if av:
-                    av_e=html.escape(av, quote=True)
-                    name_cell=f"<span style='display:inline-flex;align-items:center;gap:6px'><img src='{av_e}' style='width:22px;height:22px;border-radius:50%;border:1px solid #262c36'><b>{nm}</b></span>"
-                else:
-                    name_cell=f"<b>{nm}</b>"
-                peer_key=html.escape(str(p.get("name") or dname), quote=True)
-                tt=fmt_tok(_si(p.get("tok_today") or 0)); t30=fmt_tok(_si(p.get("tok_30d") or 0))
-                ch=_si(p.get("churn_30d") or 0)
-                eff_p = (_sf(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
-                eff_s = f"${eff_p:.2f}/k" if eff_p else "—"
-                pr=_si(p.get("projects") or 0)
-                st=p.get("status") or "offline"
-                pill="grn" if st=="online" else "dim"
-                upd=str(p.get("updated_at",""))[:16].replace("T"," ")
-                rows.append(f"<tr class='social-row' data-peer='{peer_key}' style='cursor:pointer'><td>{name_cell}</td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
-            social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Continuar con Google</td></tr>"
-    except Exception as e:
-        social_peers_html = f"<tr><td colspan=7 class='dim'>peers no disponibles: {html.escape(str(e)[:60])}</td></tr>"
+    # fetch peers snapshot (build-time) — solo si hay key
+    if SOCIAL_KEY:
+        try:
+            import urllib.request
+            url = f"https://pro-serv.tail9f39ff.ts.net/v1/databases/{SUPA_DB_ID}/rows?table=peers&limit=50&order=desc"
+            _h2 = {"Authorization": f"Bearer {SOCIAL_KEY}"} if SOCIAL_KEY.startswith("eyJ") else {"x-api-key": SOCIAL_KEY}
+            req=urllib.request.Request(url, headers=_h2)
+            with urllib.request.urlopen(req, timeout=4) as r:
+                j=json.loads(r.read().decode())
+                social_peers = j.get("rows") or []
+                # blindaje filas cifradas/corruptas (antes rompía int('7yvtLhn...') -> peers no disponibles)
+                def _si(v):
+                    try: return int(float(v))
+                    except: return 0
+                def _sf(v):
+                    try: return float(v)
+                    except: return 0.0
+                # filtra filas corruptas: si name es base64 largo sin sentido o ints no parseables, se salta
+                clean=[]
+                for r_ in social_peers:
+                    # si algún campo numérico es string base64 con '+' '/' y len>20, es cifrado
+                    bad=False
+                    for k in ("tok_today","tok_30d","churn_30d","projects"):
+                        v=r_.get(k)
+                        if isinstance(v, str) and len(v)>20 and ('+' in v or '/' in v or v.endswith('==')):
+                            bad=True
+                    if bad: continue
+                    clean.append(r_)
+                social_peers = clean
+                # solo Google (excluye anon-*) + no deleted
+                social_peers = [p for p in social_peers if p.get("status")!="deleted" and not str(p.get("name") or "").startswith("anon-")]
+                social_json = json.dumps(social_peers, ensure_ascii=False)
+                # dedup 1 fila por google_sub o name (mismo brower no crea anon-f40e/bf63)
+                _seen={}; _dedup=[]
+                for _p in sorted(social_peers, key=lambda x: str(x.get("updated_at","")), reverse=True):
+                    _k=str(_p.get("google_sub") or "").strip() or str(_p.get("name") or "").lower()
+                    if _k not in _seen:
+                        _seen[_k]=1; _dedup.append(_p)
+                social_peers=_dedup
+                def _skey(x): return (0 if x.get("status")=="online" else 1, -_si(x.get("tok_30d") or 0))
+                social_peers_sorted = sorted(social_peers, key=_skey)
+                rows=[]
+                for p in social_peers_sorted[:20]:
+                    dname=str(p.get("display_name") or p.get("name") or "?")[:32]
+                    nm=html.escape(dname)
+                    av=str(p.get("avatar_url") or "").strip()
+                    if av:
+                        av_e=html.escape(av, quote=True)
+                        name_cell=f"<span style='display:inline-flex;align-items:center;gap:6px'><img src='{av_e}' style='width:22px;height:22px;border-radius:50%;border:1px solid #262c36'><b>{nm}</b></span>"
+                    else:
+                        name_cell=f"<b>{nm}</b>"
+                    peer_key=html.escape(str(p.get("name") or dname), quote=True)
+                    tt=fmt_tok(_si(p.get("tok_today") or 0)); t30=fmt_tok(_si(p.get("tok_30d") or 0))
+                    ch=_si(p.get("churn_30d") or 0)
+                    eff_p = (_sf(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
+                    eff_s = f"${eff_p:.2f}/k" if eff_p else "—"
+                    pr=_si(p.get("projects") or 0)
+                    st=p.get("status") or "offline"
+                    pill="grn" if st=="online" else "dim"
+                    upd=str(p.get("updated_at",""))[:16].replace("T"," ")
+                    rows.append(f"<tr class='social-row' data-peer='{peer_key}' style='cursor:pointer'><td>{name_cell}</td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
+                social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Continuar con Google</td></tr>"
+        except Exception as e:
+            social_peers_html = f"<tr><td colspan=7 class='dim'>peers no disponibles: {html.escape(str(e)[:60])}</td></tr>"
 except Exception as e:
     social_self_json = json.dumps({"err":str(e)[:60]}, ensure_ascii=False)
     social_peers_html = f"<tr><td colspan=7>err {html.escape(str(e)[:40])}</td></tr>"
@@ -1220,7 +1234,7 @@ document.addEventListener('click',function(e){ var b=e.target.closest('.info-btn
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(); });
 // --- SOCIAL MODULE JS (Google Identity + dedup 1 cuenta = 1 fila) ---
 (function(){
-  var SOCIAL_KEY="sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY", DB="db27";
+  var SOCIAL_KEY="", DB="db27"; // key via proxy /v1 (serve.py inyecta Authorization), no hardcodear
   var GOOGLE_CLIENT_ID="__GOOGLE_CLIENT_ID__"; try{ if(!GOOGLE_CLIENT_ID){ var _gc=localStorage.getItem('pc_google_client_id'); if(_gc) GOOGLE_CLIENT_ID=_gc; } }catch(e){}
   // si sigue vacío, intenta Supadata config async
   if(!GOOGLE_CLIENT_ID){ fetch(supaBase()+'/v1/databases/'+DB+'/rows?table=config&limit=10', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{ try{ for(var _r of (j.rows||[])){ if((_r.key||_r.name)=='google_client_id' && _r.value){ GOOGLE_CLIENT_ID=_r.value.trim(); try{ localStorage.setItem('pc_google_client_id', GOOGLE_CLIENT_ID);}catch(e){} break; } } }catch(e){} }).catch(()=>{}); }

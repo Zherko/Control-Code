@@ -55,6 +55,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if v:
                 headers[k] = v
         headers["X-Client-Name"] = self.headers.get("X-Client-Name") or "panel-control-proxy"
+        # si el browser no mandó key (JS ya no hardcodea), inyecta desde env/mcp local
+        if "x-api-key" not in headers and "X-Api-Key" not in headers and "Authorization" not in headers:
+            _k = (os.environ.get("SUPADATA_API_KEY") or "").strip()
+            if not _k:
+                try:
+                    import json as _js
+                    for _p in [os.path.expanduser(r"~\.config\opencode\opencode.json"), str(ROOT / ".opencode" / "opencode.json")]:
+                        if os.path.exists(_p):
+                            _c = _js.load(open(_p, encoding="utf-8-sig"))
+                            _k = (((_c.get("mcp", {}) or {}).get("supadata", {}).get("environment", {}) or {}).get("SUPADATA_API_KEY", "") or "").strip()
+                            if _k: break
+                except: pass
+            if _k:
+                if _k.startswith("eyJ"):
+                    headers["Authorization"] = f"Bearer {_k}"
+                else:
+                    headers["x-api-key"] = _k
         # forward
         req = urllib.request.Request(url, data=data, headers=headers, method=self.command)
         try:

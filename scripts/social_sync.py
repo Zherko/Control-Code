@@ -6,15 +6,16 @@ CONF = os.path.expanduser(r"~\.config\opencode\opencode.json")
 SUPA_URL = "https://pro-serv.tail9f39ff.ts.net"
 DB_ID = "db27"  # panel-control-social (admin)
 TABLE = "peers"
-SOCIAL_KEY = "sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY"  # admin directa
+SOCIAL_KEY = ""  # no hardcodear: usar SUPADATA_API_KEY de env/mcp
 
 def get_key():
-    # usa key publica social si no hay admin key
     try:
         cfg=json.load(open(CONF,encoding="utf-8-sig"))
         k = ((cfg.get("mcp",{}).get("supadata",{}).get("environment",{}).get("SUPADATA_API_KEY")) or os.environ.get("SUPADATA_API_KEY") or "").strip()
         if k: return k
     except: pass
+    k2 = (os.environ.get("SUPADATA_API_KEY") or "").strip()
+    if k2: return k2
     return SOCIAL_KEY
 
 def compute_self():

@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 data/
 .opencode/cron/runs/
+body.txt
+body2.txt
+serve.log
+scripts/test_*.py
