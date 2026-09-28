@@ -697,11 +697,26 @@ try:
                 clean.append(r_)
             social_peers = clean
             social_json = json.dumps(social_peers, ensure_ascii=False)
+            # dedup 1 fila por google_sub o name (mismo brower no crea anon-f40e/bf63)
+            _seen={}; _dedup=[]
+            for _p in sorted(social_peers, key=lambda x: str(x.get("updated_at","")), reverse=True):
+                _k=str(_p.get("google_sub") or "").strip() or str(_p.get("name") or "").lower()
+                if _k not in _seen:
+                    _seen[_k]=1; _dedup.append(_p)
+            social_peers=_dedup
             def _skey(x): return (0 if x.get("status")=="online" else 1, -_si(x.get("tok_30d") or 0))
             social_peers_sorted = sorted(social_peers, key=_skey)
             rows=[]
             for p in social_peers_sorted[:20]:
-                nm=html.escape(str(p.get("name","?"))[:32])
+                dname=str(p.get("display_name") or p.get("name") or "?")[:32]
+                nm=html.escape(dname)
+                av=str(p.get("avatar_url") or "").strip()
+                if av:
+                    av_e=html.escape(av, quote=True)
+                    name_cell=f"<span style='display:inline-flex;align-items:center;gap:6px'><img src='{av_e}' style='width:22px;height:22px;border-radius:50%;border:1px solid #262c36'><b>{nm}</b></span>"
+                else:
+                    name_cell=f"<b>{nm}</b>"
+                peer_key=html.escape(str(p.get("name") or dname), quote=True)
                 tt=fmt_tok(_si(p.get("tok_today") or 0)); t30=fmt_tok(_si(p.get("tok_30d") or 0))
                 ch=_si(p.get("churn_30d") or 0)
                 eff_p = (_sf(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
@@ -710,7 +725,7 @@ try:
                 st=p.get("status") or "offline"
                 pill="grn" if st=="online" else "dim"
                 upd=str(p.get("updated_at",""))[:16].replace("T"," ")
-                rows.append(f"<tr class='social-row' data-peer='{nm}' style='cursor:pointer'><td><b>{nm}</b></td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
+                rows.append(f"<tr class='social-row' data-peer='{peer_key}' style='cursor:pointer'><td>{name_cell}</td><td class='num'>{tt}</td><td class='num'>{t30}</td><td class='num'>{eff_s}</td><td class='num'>{pr}</td><td><span class='pill {pill}'>{html.escape(st)}</span></td><td class='dim' style='font-size:11px'>{html.escape(upd)}</td></tr>")
             social_peers_html = "".join(rows) if rows else "<tr><td colspan=7 class='dim'>nadie conectado aún — sé el primero en Conectar</td></tr>"
     except Exception as e:
         social_peers_html = f"<tr><td colspan=7 class='dim'>peers no disponibles: {html.escape(str(e)[:60])}</td></tr>"

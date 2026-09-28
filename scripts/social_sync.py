@@ -100,11 +100,35 @@ def api(path, method="GET", body=None):
 def list_peers(limit=50):
     return api(f"/v1/databases/{DB_ID}/rows?table={TABLE}&limit={limit}&order=desc")
 
-def upsert_peer(name, self_stats, status="online"):
+def load_profile():
+    # prioriza .opencode/social_identity.json (persistencia anon/google)
+    try:
+        p=ROOT/".opencode"/"social_identity.json"
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8-sig"))
+    except: pass
+    return None
+def save_profile(prof):
+    try:
+        p=ROOT/".opencode"/"social_identity.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(prof, ensure_ascii=False, indent=2), encoding="utf-8")
+    except: pass
+def upsert_peer(name, self_stats, status="online", profile=None):
     row={"name":name, "tok_today":self_stats["tok_today"], "tok_30d":self_stats["tok_30d"],
          "cost_today":self_stats["cost_today"], "cost_30d":self_stats["cost_30d"],
          "churn_30d":self_stats["churn_30d"], "projects":self_stats["projects"],
          "updated_at":datetime.datetime.now().isoformat(timespec="seconds"), "status":status}
+    prof=profile or load_profile()
+    if prof and prof.get("google_sub"):
+        row["display_name"]=prof.get("name") or name
+        row["avatar_url"]=prof.get("picture") or ""
+        row["google_sub"]=prof.get("google_sub") or prof.get("sub") or ""
+        if prof.get("email"): row["email"]=prof.get("email")
+        return api(f"/v1/databases/{DB_ID}/rows", method="POST", body={"table":TABLE,"row":row,"onConflict":["google_sub"],"resolution":"last"})
+    if prof and prof.get("picture"):
+        row["display_name"]=prof.get("name") or name
+        row["avatar_url"]=prof.get("picture")
     return api(f"/v1/databases/{DB_ID}/rows", method="POST", body={"table":TABLE,"row":row,"onConflict":["name"],"resolution":"last"})
 
 def main():
@@ -113,26 +137,55 @@ def main():
     ap.add_argument("--connect", action="store_true")
     ap.add_argument("--disconnect", action="store_true")
     ap.add_argument("--name", type=str, default="")
+    ap.add_argument("--avatar", type=str, default="")
+    ap.add_argument("--google-sub", type=str, default="")
+    ap.add_argument("--email", type=str, default="")
     ap.add_argument("--list", action="store_true")
     args=ap.parse_args()
     if args.list:
         print(json.dumps(list_peers(), ensure_ascii=False, indent=2))
         return
+    prof=load_profile()
     name=args.name.strip()
     if not name:
-        # intenta leer de localStorage exportado? fallback anon
-        import random, string
-        name="anon-"+ "".join(random.choices(string.hexdigits[:16], k=4)).lower()
-        print(f"Nombre no dado, usando {name} — pásalo con --name para fijarlo")
+        if prof and prof.get("name"):
+            name=prof.get("name")
+        else:
+            # reuse stable anon (fix duplicidad)
+            anon_file=ROOT/".opencode"/"social_identity.json"
+            if anon_file.exists():
+                try:
+                    j=json.loads(anon_file.read_text(encoding="utf-8-sig"))
+                    if j.get("anon_name"): name=j.get("anon_name")
+                except: pass
+            if not name:
+                import random, string
+                name="anon-"+ "".join(random.choices(string.hexdigits[:16], k=4)).lower()
+                save_profile({"anon_name": name})
+                print(f"Nombre no dado, usando {name} — estable, se reutilizará")
+            else:
+                print(f"Reusando anon {name}")
+    # si se pasan datos Google por CLI, úsalos
+    cli_prof=None
+    if args.avatar or args.google_sub:
+        cli_prof={"name": name, "picture": args.avatar, "google_sub": args.google_sub, "email": args.email}
+    else:
+        cli_prof=prof
     self_stats=compute_self()
     if args.disconnect:
-        res=upsert_peer(name, self_stats, status="offline")
+        res=upsert_peer(name, self_stats, status="offline", profile=cli_prof)
         print(f"Desconectado {name}: {self_stats}")
         print(json.dumps(res, ensure_ascii=False))
         return
     if args.connect or True:
-        # si name existe con otro churn? onConflict last lo actualiza
-        res=upsert_peer(name, self_stats, status="online")
+        res=upsert_peer(name, self_stats, status="online", profile=cli_prof)
+        # guarda anon estable si es anon
+        if name.startswith("anon-") and not (cli_prof and cli_prof.get("google_sub")):
+            try:
+                cur=json.loads((ROOT/".opencode"/"social_identity.json").read_text(encoding="utf-8-sig")) if (ROOT/".opencode"/"social_identity.json").exists() else {}
+            except: cur={}
+            cur["anon_name"]=name
+            save_profile(cur)
         print(f"Conectado {name}: tok_today={self_stats['tok_today']} tok_30d={self_stats['tok_30d']} churn={self_stats['churn_30d']} proyectos={self_stats['projects']} $/k={(self_stats['cost_30d']/(self_stats['churn_30d']/1000) if self_stats['churn_30d'] else 0):.2f}")
         print(json.dumps(res, ensure_ascii=False))
 
