@@ -22,6 +22,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
     def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            self.path = "/dashboard.html"
         if self.path.startswith("/v1/") or self.path.startswith("/health"):
             self.proxy()
         else:
