@@ -1179,6 +1179,7 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
 // --- SOCIAL MODULE JS (compartimentado) — solo botón Conectar + chat al pinchar peer ---
 (function(){
   var SOCIAL_KEY="sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY", DB="db27";
+  function supaBase(){ var h=location.hostname; if(h==='localhost' || h==='127.0.0.1') return ''; return 'https://pro-serv.tail9f39ff.ts.net'; }
   var connBtn=document.getElementById('socialConnect'), disBtn=document.getElementById('socialDisconnect'), statusEl=document.getElementById('socialStatus');
   if(!connBtn) return;
   function fmtTok(n){ if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return ''+n; }
@@ -1198,7 +1199,7 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   updateUI();
   function pushPeer(name, st){
     var payload={table:'peers', row:{name:name, tok_today:SOCIAL_SELF.tok_today||0, tok_30d:SOCIAL_SELF.tok_30d||0, cost_today:SOCIAL_SELF.cost_today||0, cost_30d:SOCIAL_SELF.cost_30d||0, churn_30d:SOCIAL_SELF.churn_30d||0, projects:SOCIAL_SELF.projects||0, updated_at:new Date().toISOString(), status:st}, onConflict:['name'], resolution:'last'};
-    return fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(r=>r.json());
+    return fetch(supaBase()+'/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(r=>r.json());
   }
   connBtn.addEventListener('click', function(){
     var n=getName() || genName();
@@ -1229,7 +1230,7 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   function loadChat(){
     if(!chatPeer) return;
     var me=getName();
-    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows?table=messages&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
+    fetch(supaBase()+'/v1/databases/'+DB+'/rows?table=messages&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
       var rows=(j.rows||[]).filter(r=> (r.from_name===me && r.to_name===chatPeer) || (r.from_name===chatPeer && r.to_name===me));
       rows.sort((a,b)=> String(a.created_at).localeCompare(String(b.created_at)));
       var h=document.getElementById('chatHistory');
@@ -1244,14 +1245,14 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
     var me=getName() || genName();
     try{ localStorage.setItem('pc_social_name', me); }catch(e){}
     var payload={table:'messages', row:{from_name:me, to_name:chatPeer, body:txt, created_at:new Date().toISOString()}};
-    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(()=>{ input.value=''; loadChat(); });
+    fetch(supaBase()+'/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(()=>{ input.value=''; loadChat(); });
   });
   if(input) input.addEventListener('keydown', function(e){ if(e.key==='Enter') sendBtn.click(); });
   document.addEventListener('click', function(e){
     var tr=e.target.closest('tr.social-row'); if(tr){ var peer=tr.getAttribute('data-peer'); if(peer) openChat(peer); }
   });
   function refreshPeersLive(){
-    fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
+    fetch(supaBase()+'/v1/databases/'+DB+'/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
       var rows=j.rows||[]; if(!rows.length){ var tb0=document.getElementById('socialPeers'); if(tb0) tb0.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Conectar</td></tr>'; var c0=document.getElementById('socialCount'); if(c0) c0.textContent='0'; return; }
       // filtra filas cifradas/corruptas (int se rompía -> peers no disponibles)
       rows=rows.filter(function(p){ var bad=false; ['tok_today','tok_30d','churn_30d','projects'].forEach(function(k){ var v=p[k]; if(typeof v==='string' && v.length>20 && (v.indexOf('+')!==-1 || v.indexOf('/')!==-1)) bad=true; }); return !bad; });

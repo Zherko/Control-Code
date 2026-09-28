@@ -12,7 +12,7 @@ Lanza el Centro de Control local-first en `http://localhost:8099/dashboard.html`
 
 ## Qué hace
 1. Regenera `dashboard.html` con `python scripts/gen-dashboard.py` (lee `~/.local/share/opencode/opencode.db` + `~/.config/opencode/opencode.json` + `git log`)
-2. Sirve `Panel Control` en `http://localhost:8099` con `python -m http.server 8099`
+2. Sirve `Panel Control` en `http://localhost:8099` con `python scripts/serve.py` (estático + proxy `/v1/*` -> Supadata para CORS)
 3. Abre el navegador automáticamente
 
 Uso:
@@ -25,13 +25,13 @@ Uso:
 ```powershell
 # regenera
 python scripts/gen-dashboard.py
-# sirve (desde Panel Control)
-python -m http.server 8099
+# sirve (desde Panel Control) - con proxy CORS
+python scripts/serve.py
 # abre
 start http://localhost:8099/dashboard.html
 ```
 
 El agente al recibir `/skill_control` debe ejecutar en orden:
 1. `python scripts/gen-dashboard.py` en `C:\Proyectos\Skills\Panel Control`
-2. Verificar puerto 8099 libre, lanzar `python -m http.server 8099` en background si no está
+2. Verificar puerto 8099 libre, lanzar `python scripts/serve.py` en background si no está (reemplaza http.server para CORS Supadata)
 3. Responder con URL lista: `http://localhost:8099/dashboard.html` + `dashboard.html` regenerado OK
