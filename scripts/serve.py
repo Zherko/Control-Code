@@ -7,7 +7,7 @@ Uso: python scripts/serve.py  (puerto 8099)
 import http.server, socketserver, urllib.request, urllib.error, os, pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUPA = "https://pro-serv.tail9f39ff.ts.net"
-PORT = 8099
+PORT = 3000
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):

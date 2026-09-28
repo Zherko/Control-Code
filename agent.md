@@ -6,14 +6,14 @@
 Eres el agente del **Panel Control** (`C:\Proyectos\Skills\Panel Control`). Mantienes un **artefacto**: el HTML nunca lee la DB en runtime. Eres perezoso: stdlib antes que dependencia, borrar antes que añadir, un `gen-dashboard.py` que hace todo.
 
 ## Propósito
-Dashboard en `http://localhost:8099/dashboard.html` con 6 vistas:
+Dashboard en `http://localhost:3000/dashboard.html` (`8099` también) con 6 vistas:
 
 - **Inicio:** 4 cards Consumo + 4 eficiencia (`$/k churn equipo`, `coste 30d`, `churn add+del`, `rework del/add`), `Evolución $/k churn` (30d diario / 90d semanal), `Por autor 30d`, `Coaching Sigue/Vigila/Corta` + `Analizar margen`.
 - **Consumo:** 4 cards + `Actividad diaria 7d` fija + `Por proyecto` (`$/k churn` **real** por proyecto) + `Por modelo (est.)` + `Por agente familia (est.)` (`$/k churn` estimado por **tokens**). Tabs `Hoy/7d/30d/Total` y orden 3 estados `▼/▲/default` persistido.
 - **Plataforma:** `Herramientas & caché` (build-time `part.type=tool` + `tokens.cache`) + `Git 7d` (`log --numstat --since=7 days`).
 - **Recursos:** 26 agentes, 2 MCPs (`gsc`, `supadata`), 253 skills con filtro en vivo desde `~/.config/opencode/opencode.json`.
 - **Tareas:** Goals, Crons, **Pendientes** (cuaderno agentes `Nombre::fecha::asunto`), calendario Pomodoro mensual con detalle por día.
-- **Social:** `Supadata db27 panel-control-social` (owner `admin`) — `peers` + `messages`, botón `⚡ Conectar` anon único, tabla peers + chat al pinchar.
+- **Social:** `Supadata db27 panel-control-social` (owner `admin`) — `peers` + `messages`, **solo Google** (`Continuar con Google` GIS, avatar+nombre, filtra `anon-*`), tabla peers + chat al pinchar. `GOOGLE_CLIENT_ID` centralizado `.opencode/google_client_id.txt` (3000 autorizado).
 
 ## Métricas núcleo — qué miden y por qué
 
@@ -52,7 +52,7 @@ Panel Control/
 
 ## Módulos compartimentados
 - **PENDING:** `.opencode/pending_tasks.json` formato `{"project","date":"YYYY-MM-DD","subject","desc","status":"open|done"}` + `.opencode/skills/skill_pending/SKILL.md` (título obligatorio `Nombre proyecto::fecha::asunto`). Tabla en Tareas con `thead/tbody` y filtro por `td` para no romper sort.
-- **SOCIAL:** `SUPADATA_URL=https://pro-serv.tail9f39ff.ts.net` + `SOCIAL_KEY=sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY` owner `admin` → `db27 panel-control-social` tablas `peers`/`messages`. `social_self` = `tok_today/30d, cost_today/30d, churn_30d, proyectos`. `social_sync.py --connect --name X` hace `POST /v1/databases/db27/rows onConflict=name`. UI: solo `⚡ Conectar` genera `anon-XXXX` único, `Desconectar` pone `offline`, pinchar fila abre `chatModal` `messages` filtrado `me↔peer`. Sin input de key (la key va embebida `SOCIAL_KEY`).
+- **SOCIAL:** `SUPADATA_URL=https://pro-serv.tail9f39ff.ts.net` + `SOCIAL_KEY=sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY` owner `admin` → `db27 panel-control-social` tablas `peers`/`messages`. `social_self` = `tok_today/30d, cost_today/30d, churn_30d, proyectos`. `social_sync.py --connect` hace `POST /v1/databases/db27/rows onConflict=google_sub|name` (solo Google, `anon-*` filtrado). UI: `Continuar con Google` (GIS) + `Desconectar`, muestra avatar/nombre real, pinchar fila abre `chatModal` `messages` filtrado `me↔peer`. `GOOGLE_CLIENT_ID` centralizado `.opencode/google_client_id.txt` (autorizado `localhost:3000`/`127.0.0.1:3000`). Otros equipos: `python scripts/serve.py` + Google en su `localhost:3000`.
 
 ## Realtime local saludable
 - **watch.py:** `watchdog` si está, si no `poll 2s` sobre `opencode.db` + `opencode.json` + `pending_tasks.json` + `.git/HEAD`. Solo regenera si `mtime/size` cambia + debounce `2s` + throttle `1/5s`. Corre con `python scripts/watch.py` (WindowStyle Hidden).
@@ -74,10 +74,10 @@ Panel Control/
 
 ## Comandos
 - Regenerar: `python scripts/gen-dashboard.py` → `OK -> dashboard.html | consumo total=7.4B ...`
-- Servir: `python -m http.server 8099` → `http://localhost:8099/dashboard.html`
+- Servir: `python scripts/serve.py` → `http://localhost:3000/dashboard.html` (también `http://localhost:3000/` redirige)
 - Realtime local: `python scripts/watch.py` (deja en background)
-- Social push: `python scripts/social_sync.py --connect` / `--name TuNombre`
-- Lanzar: `/skill_control` (alias `/skill_centro_control`) — genera + sirve 8099
+- Social push: `python scripts/social_sync.py --connect` (solo Google, anon estable si no hay Google)
+- Lanzar: `/skill_control` (alias `/skill_centro_control`) — genera + sirve 3000
 
 ## No hacer
 - No añadas servidor, framework ni dependencias nuevas sin aprobación.

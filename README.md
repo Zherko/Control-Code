@@ -1,6 +1,6 @@
 # Control-Code — Panel Control
 
-Centro de mando **local-first** para OpenCode. Dashboard **estático** que agrega consumo, eficiencia, git y recursos desde tu máquina. Un escritor `scripts/gen-dashboard.py` → `dashboard.html` (~180KB). Sin servidor, sin telemetría, sin dependencias nuevas. Servido en `http://localhost:8099/dashboard.html`.
+Centro de mando **local-first** para OpenCode. Dashboard **estático** que agrega consumo, eficiencia, git y recursos desde tu máquina. Un escritor `scripts/gen-dashboard.py` → `dashboard.html` (~180KB). Sin servidor, sin telemetría, sin dependencias nuevas. Servido en `http://localhost:3000/dashboard.html` (Google OAuth autorizado para `localhost:3000`/`127.0.0.1:3000`, `8099` también sirve).
 
 ![dashboard](https://img.shields.io/badge/dashboard-estático-58a6ff) ![local-first](https://img.shields.io/badge/local--first-opencode.db-3fb950) ![realtime](https://img.shields.io/badge/realtime-watch%2BHEAD-8b5cf6) ![python](https://img.shields.io/badge/python-3.x%20stdlib-blue)
 
@@ -33,7 +33,7 @@ Centro de mando **local-first** para OpenCode. Dashboard **estático** que agreg
 - Goals (`1 activo seo-skill-push`), Crons (`0`), **Pendientes** (cuaderno agentes) y **calendario Pomodoro** mensual. Pinchar día → detalle `tokens/coste/proyecto/modelo` de ese día. `localStorage pc_*` para rango/vista/orden/evo/analisis/scroll.
 
 ### Social
-- `Supadata db27 panel-control-social` (owner `admin`) tablas `peers`/`messages`. Solo botón `⚡ Conectar` genera `anon-XXXX` único (si existe añade sufijo), `Desconectar` pone `offline`. Pinchar peer abre chat privado. `social_sync.py --connect --name X` también conecta desde CLI. Todo `admin` directo como pidió el usuario (`SOCIAL_KEY` embebida).
+- `Supadata db27 panel-control-social` (owner `admin`) tablas `peers`/`messages`. **Solo Google** — botón `Continuar con Google` (GIS) muestra nombre+avatar real; `Desconectar` pone `offline`. Peers sin Google se ocultan (`anon-*` filtrado). Pinchar peer abre chat privado. `social_sync.py --connect` reutiliza `google_sub` si existe, si no `anon` estable. `GOOGLE_CLIENT_ID` centralizado en `.opencode/google_client_id.txt` (o env `GOOGLE_CLIENT_ID` / Supadata `config.google_client_id`) — **un ID para todo el equipo**, ya autorizado para `http://localhost:3000` y `http://127.0.0.1:3000` (propaga 5 min). Otros equipos solo lanzan `python scripts/serve.py` y entran a `http://localhost:3000` con su Google.
 
 ## Métricas en 30 segundos
 
@@ -57,15 +57,16 @@ Centro de mando **local-first** para OpenCode. Dashboard **estático** que agreg
 ## Uso rápido
 
 ```powershell
-# Vía skills (recomendado) — genera + sirve 8099
+# Vía skills (recomendado) — genera + sirve 3000
 /skill_control            # alias /skill_centro_control también vale
 
 # Manual
 python scripts/gen-dashboard.py
 # OK -> dashboard.html | consumo total=7.40B | agentes=26 skills=253 ...
 
-python -m http.server 8099
-# http://localhost:8099/dashboard.html
+python scripts/serve.py
+# http://localhost:3000/dashboard.html  (también http://localhost:8099 si usas http.server)
+# Otros equipos: mismo comando en su PC + Continuar con Google
 
 # Realtime local (opcional, deja en background)
 python scripts/watch.py
@@ -102,7 +103,7 @@ Panel Control/
 Cada feature vive en bloque `// MODULE START/END` aislado:
 
 - **Pendientes:** fichero `pending_tasks.json` formato `{"project","date":"YYYY-MM-DD","subject","desc","status"}` + skill `skill_pending` (título obligatorio `Nombre proyecto::fecha::asunto` 80ch + `desc` 1-4 líneas). Tabla `thead/tbody` con filtro por `td[colspan]` para no romper sort. Borra `pending_tasks.json` + skill + bloque PENDING para quitar.
-- **Social:** `db27 panel-control-social` owner `admin` tablas `peers(id,name,tok_today/30d,cost_today/30d,churn_30d,projects,updated_at,status)` + `messages(from_name,to_name,body,created_at)`. Todo `admin` (`SOCIAL_KEY=sd_a0L...`). Borra `db27` + `social_sync.py` + bloque SOCIAL para quitar.
+- **Social:** `db27 panel-control-social` owner `admin` tablas `peers(id,name,display_name,avatar_url,google_sub,email,tok_today/30d,cost_today/30d,churn_30d,projects,updated_at,status)` + `messages`. Solo Google (filtra `anon-*`, muestra avatar). `GOOGLE_CLIENT_ID` en `.opencode/google_client_id.txt`. Borra `db27` + `social_sync.py` + bloque SOCIAL para quitar.
 - **Realtime:** `watch.py` + `softRefresh` HEAD. Borra `watch.py` y vuelve a `setInterval 30s` si quieres.
 
 ## Troubleshooting
