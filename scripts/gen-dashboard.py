@@ -677,17 +677,36 @@ try:
         with urllib.request.urlopen(req, timeout=4) as r:
             j=json.loads(r.read().decode())
             social_peers = j.get("rows") or []
+            # blindaje filas cifradas/corruptas (antes rompía int('7yvtLhn...') -> peers no disponibles)
+            def _si(v):
+                try: return int(float(v))
+                except: return 0
+            def _sf(v):
+                try: return float(v)
+                except: return 0.0
+            # filtra filas corruptas: si name es base64 largo sin sentido o ints no parseables, se salta
+            clean=[]
+            for r_ in social_peers:
+                # si algún campo numérico es string base64 con '+' '/' y len>20, es cifrado
+                bad=False
+                for k in ("tok_today","tok_30d","churn_30d","projects"):
+                    v=r_.get(k)
+                    if isinstance(v, str) and len(v)>20 and ('+' in v or '/' in v or v.endswith('==')):
+                        bad=True
+                if bad: continue
+                clean.append(r_)
+            social_peers = clean
             social_json = json.dumps(social_peers, ensure_ascii=False)
-            def _skey(x): return (0 if x.get("status")=="online" else 1, -int(x.get("tok_30d") or 0))
+            def _skey(x): return (0 if x.get("status")=="online" else 1, -_si(x.get("tok_30d") or 0))
             social_peers_sorted = sorted(social_peers, key=_skey)
             rows=[]
             for p in social_peers_sorted[:20]:
                 nm=html.escape(str(p.get("name","?"))[:32])
-                tt=fmt_tok(int(p.get("tok_today") or 0)); t30=fmt_tok(int(p.get("tok_30d") or 0))
-                ch=int(p.get("churn_30d") or 0)
-                eff_p = (float(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
+                tt=fmt_tok(_si(p.get("tok_today") or 0)); t30=fmt_tok(_si(p.get("tok_30d") or 0))
+                ch=_si(p.get("churn_30d") or 0)
+                eff_p = (_sf(p.get("cost_30d") or 0) / (ch/1000)) if ch else 0
                 eff_s = f"${eff_p:.2f}/k" if eff_p else "—"
-                pr=int(p.get("projects") or 0)
+                pr=_si(p.get("projects") or 0)
                 st=p.get("status") or "offline"
                 pill="grn" if st=="online" else "dim"
                 upd=str(p.get("updated_at",""))[:16].replace("T"," ")
@@ -1233,15 +1252,19 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   });
   function refreshPeersLive(){
     fetch('https://pro-serv.tail9f39ff.ts.net/v1/databases/'+DB+'/rows?table=peers&limit=50&order=desc', {headers:{'x-api-key':SOCIAL_KEY}}).then(r=>r.json()).then(j=>{
-      var rows=j.rows||[]; if(!rows.length) return;
-      var tb=document.getElementById('socialPeers'); if(!tb) return;
-      rows.sort((a,b)=> (a.status==='online'?0:1)-(b.status==='online'?0:1) || (b.tok_30d||0)-(a.tok_30d||0));
+      var rows=j.rows||[]; if(!rows.length){ var tb0=document.getElementById('socialPeers'); if(tb0) tb0.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Conectar</td></tr>'; var c0=document.getElementById('socialCount'); if(c0) c0.textContent='0'; return; }
+      // filtra filas cifradas/corruptas (int se rompía -> peers no disponibles)
+      rows=rows.filter(function(p){ var bad=false; ['tok_today','tok_30d','churn_30d','projects'].forEach(function(k){ var v=p[k]; if(typeof v==='string' && v.length>20 && (v.indexOf('+')!==-1 || v.indexOf('/')!==-1)) bad=true; }); return !bad; });
+      if(!rows.length){ var tb1=document.getElementById('socialPeers'); if(tb1) tb1.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Conectar</td></tr>'; return; }
+      function si(v){ var n=Number(v); return isFinite(n)?Math.floor(n):0; }
+      function sf(v){ var n=Number(v); return isFinite(n)?n:0; }
+      rows.sort((a,b)=> (a.status==='online'?0:1)-(b.status==='online'?0:1) || (si(b.tok_30d)||0)-(si(a.tok_30d)||0));
       var html='';
       for(var i=0;i<Math.min(20,rows.length);i++){
-        var p=rows[i]; var eff=(p.churn_30d? (p.cost_30d/(p.churn_30d/1000)).toFixed(2) : '—');
-        html+='<tr class="social-row" data-peer="'+String(p.name||'?').replace(/"/g,'&quot;')+'" style="cursor:pointer"><td><b>'+(p.name||'?')+'</b></td><td class="num">'+fmtTok(p.tok_today||0)+'</td><td class="num">'+fmtTok(p.tok_30d||0)+'</td><td class="num">'+(eff!=='—'?'$'+eff+'/k':eff)+'</td><td class="num">'+(p.projects||0)+'</td><td><span class="pill '+(p.status==='online'?'grn':'dim')+'">'+(p.status||'offline')+'</span></td><td class="dim" style="font-size:11px">'+String(p.updated_at||'').slice(0,16).replace('T',' ')+'</td></tr>';
+        var p=rows[i]; var ch=si(p.churn_30d), cs=sf(p.cost_30d); var eff=(ch? (cs/(ch/1000)).toFixed(2) : '—');
+        html+='<tr class="social-row" data-peer="'+String(p.name||'?').replace(/"/g,'&quot;')+'" style="cursor:pointer"><td><b>'+(p.name||'?')+'</b></td><td class="num">'+fmtTok(si(p.tok_today)||0)+'</td><td class="num">'+fmtTok(si(p.tok_30d)||0)+'</td><td class="num">'+(eff!=='—'?'$'+eff+'/k':eff)+'</td><td class="num">'+si(p.projects||0)+'</td><td><span class="pill '+(p.status==='online'?'grn':'dim')+'">'+(p.status||'offline')+'</span></td><td class="dim" style="font-size:11px">'+String(p.updated_at||'').slice(0,16).replace('T',' ')+'</td></tr>';
       }
-      tb.innerHTML=html;
+      var tb=document.getElementById('socialPeers'); if(tb) tb.innerHTML=html;
       var cnt=document.getElementById('socialCount'); if(cnt) cnt.textContent=rows.filter(r=>r.status==='online').length;
     }).catch(()=>{});
   }
