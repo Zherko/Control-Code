@@ -864,12 +864,16 @@ __INICIO_COACHING__
 <div class="panel"><div class="cal-nav"><button id="calPrev">‹</button><b id="calLabel">—</b><button id="calNext">›</button></div><div id="calGrid" class="cal-grid"></div><div id="calDetail" class="cal-detail"><span class="hint">Toca un dia para ver su resumen.</span></div><p class="small">Fondo azulado = dia con gasto · invertido = hoy/seleccion · atenuado = futuro <button class="info-btn" data-info="calendario" style="vertical-align:middle">i</button></p></div>
 </div>
 
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!-- SOCIAL MODULE START (compartimentado) -->
 <div id="view-social" class="view">
 <h2>Social — peers conectados <button class="info-btn" data-info="social">i</button></h2>
 <div class="panel" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-<button id="socialConnect" style="border:1px solid var(--grn);background:var(--grn);color:#000;border-radius:20px;padding:10px 18px;cursor:pointer;font-weight:700">⚡ Conectar</button>
+<button id="socialGoogle" style="border:1px solid #dadce0;background:#fff;color:#3c4043;border-radius:20px;padding:10px 18px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:8px"><img src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png" style="width:18px;height:18px" alt="">Continuar con Google</button>
+<div id="g_id_onload" data-auto_prompt="false"></div>
+<button id="socialConnect" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:10px 18px;cursor:pointer;font-weight:700">⚡ Conectar anónimo</button>
 <button id="socialDisconnect" style="border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:20px;padding:8px 14px;cursor:pointer;display:none">Desconectar</button>
+<span id="socialProfile" class="small" style="display:inline-flex;align-items:center;gap:8px"></span>
 <span id="socialStatus" class="small"></span>
 <span class="small" style="margin-left:auto">Pincha un peer para chatear</span>
 </div>
@@ -1191,11 +1195,13 @@ function openInfo(k){ var d=INFO[k]; if(!d) return; document.getElementById('inf
 function closeInfo(){ document.getElementById('infoModal').classList.remove('on'); }
 document.addEventListener('click',function(e){ var b=e.target.closest('.info-btn'); if(b){ openInfo(b.getAttribute('data-info')); }});
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(); });
-// --- SOCIAL MODULE JS (compartimentado) — solo botón Conectar + chat al pinchar peer ---
+// --- SOCIAL MODULE JS (Google Identity + dedup 1 cuenta = 1 fila) ---
 (function(){
   var SOCIAL_KEY="sd_a0L7oRG_cK4oMCvIr-NTgWAM5eZ3oDvY", DB="db27";
+  var GOOGLE_CLIENT_ID=""; try{ var _gc=localStorage.getItem('pc_google_client_id'); if(_gc) GOOGLE_CLIENT_ID=_gc; }catch(e){}
   function supaBase(){ var h=location.hostname; if(h==='localhost' || h==='127.0.0.1') return ''; return 'https://pro-serv.tail9f39ff.ts.net'; }
   var connBtn=document.getElementById('socialConnect'), disBtn=document.getElementById('socialDisconnect'), statusEl=document.getElementById('socialStatus');
+  var gBtn=document.getElementById('socialGoogle'), profEl=document.getElementById('socialProfile');
   if(!connBtn) return;
   function fmtTok(n){ if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return ''+n; }
   try{
@@ -1205,30 +1211,84 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
   }catch(e){}
   function genName(){ return 'anon-'+Math.random().toString(16).slice(2,6); }
   function getName(){ try{ return localStorage.getItem('pc_social_name')||'' }catch(e){return ''} }
+  function getProfile(){ try{ return JSON.parse(localStorage.getItem('pc_social_profile')||'null'); }catch(e){return null} }
+  function setProfile(p){ try{ localStorage.setItem('pc_social_profile', JSON.stringify(p)); }catch(e){} }
   function isConnected(){ try{ return localStorage.getItem('pc_social_connected')==='1' }catch(e){return false} }
+  function decodeJwt(t){ try{ var b=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'); return JSON.parse(atob(b)); }catch(e){return null} }
+  function sanitizeName(s){ return (s||'').trim().slice(0,32).replace(/[^\\w\\s\\-\\.áéíóúñÁÉÍÓÚÑ]/g,'').trim()||'usuario'; }
   function updateUI(){
-    var n=getName(); var on=isConnected();
-    if(on){ connBtn.style.display='none'; disBtn.style.display='inline-block'; statusEl.textContent='Conectado como '+n+' — compartiendo tok hoy/30d, $/k churn, proyectos'; statusEl.style.color='var(--grn)'; }
-    else { connBtn.style.display='inline-block'; disBtn.style.display='none'; statusEl.textContent='No conectado — pulsa Conectar para compartir'; statusEl.style.color='var(--dim)'; }
+    var n=getName(); var on=isConnected(); var prof=getProfile();
+    if(prof && prof.name){
+      profEl.innerHTML='<img src="'+prof.picture+'" style="width:26px;height:26px;border-radius:50%;border:1px solid var(--line)"> <b>'+prof.name.replace(/</g,'&lt;')+'</b>';
+      profEl.style.display='inline-flex';
+      if(gBtn) gBtn.style.display='none';
+    } else {
+      profEl.style.display='none';
+      if(gBtn) gBtn.style.display=isConnected()?'none':'inline-flex';
+    }
+    if(on){
+      var label=prof?prof.name:n;
+      connBtn.style.display='none'; disBtn.style.display='inline-block';
+      statusEl.textContent='Conectado como '+label+' — compartiendo tok hoy/30d, $/k churn, proyectos'; statusEl.style.color='var(--grn)';
+    } else {
+      connBtn.style.display='inline-flex'; disBtn.style.display='none';
+      statusEl.textContent='No conectado — entra con Google o anónimo'; statusEl.style.color='var(--dim)';
+    }
   }
   updateUI();
   function pushPeer(name, st){
-    var payload={table:'peers', row:{name:name, tok_today:SOCIAL_SELF.tok_today||0, tok_30d:SOCIAL_SELF.tok_30d||0, cost_today:SOCIAL_SELF.cost_today||0, cost_30d:SOCIAL_SELF.cost_30d||0, churn_30d:SOCIAL_SELF.churn_30d||0, projects:SOCIAL_SELF.projects||0, updated_at:new Date().toISOString(), status:st}, onConflict:['name'], resolution:'last'};
+    var prof=getProfile();
+    var row={name:name, tok_today:SOCIAL_SELF.tok_today||0, tok_30d:SOCIAL_SELF.tok_30d||0, cost_today:SOCIAL_SELF.cost_today||0, cost_30d:SOCIAL_SELF.cost_30d||0, churn_30d:SOCIAL_SELF.churn_30d||0, projects:SOCIAL_SELF.projects||0, updated_at:new Date().toISOString(), status:st};
+    if(prof && prof.sub){ row.display_name=prof.name; row.avatar_url=prof.picture; row.google_sub=prof.sub; row.email=prof.email||''; }
+    var conflict=(prof && prof.sub)?['google_sub']:['name'];
+    var payload={table:'peers', row:row, onConflict:conflict, resolution:'last'};
     return fetch(supaBase()+'/v1/databases/'+DB+'/rows', {method:'POST', headers:{'Content-Type':'application/json','x-api-key':SOCIAL_KEY}, body:JSON.stringify(payload)}).then(r=>r.json());
   }
-  connBtn.addEventListener('click', function(){
-    var n=getName() || genName();
-    // no repetir
-    try{
-      var exists=(SOCIAL_PEERS_SNAPSHOT||[]).some(p=> (p.name||'').toLowerCase()===n.toLowerCase());
-      if(exists){ n=n+'-'+Math.random().toString(16).slice(2,4); }
-    }catch(e){}
+  window.handleGoogleCredential=function(resp){
+    var data=decodeJwt(resp.credential||''); if(!data) return;
+    var prof={name:sanitizeName(data.name||data.email||'usuario'), picture:data.picture||'', sub:data.sub||'', email:data.email||''};
+    setProfile(prof);
+    var n=prof.name;
     try{ localStorage.setItem('pc_social_name', n); localStorage.setItem('pc_social_connected','1'); }catch(e){}
+    updateUI();
+    statusEl.textContent='Conectando como '+n+'…'; statusEl.style.color='var(--grn)';
+    pushPeer(n,'online').then(()=>{ statusEl.textContent='Conectado como '+n+' ✓'; updateUI(); setTimeout(()=>{ try{ softRefresh(); }catch(e){} }, 700); });
+  };
+  function initGoogle(){
+    if(!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('.apps.googleusercontent.com')===-1) return false;
+    try{
+      if(window.google && google.accounts && google.accounts.id){
+        google.accounts.id.initialize({client_id:GOOGLE_CLIENT_ID, callback: handleGoogleCredential, auto_select:false});
+        return true;
+      }
+    }catch(e){}
+    return false;
+  }
+  setTimeout(initGoogle, 1200);
+  if(gBtn) gBtn.addEventListener('click', function(){
+    if(!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('.apps.googleusercontent.com')===-1){
+      var nid=prompt('Falta GOOGLE_CLIENT_ID. Ve a https://console.cloud.google.com/apis/credentials → Crear ID de OAuth 2.0 (tipo Web) y pega aquí el Client ID:','');
+      if(nid && nid.indexOf('.apps.googleusercontent.com')!==-1){ try{ localStorage.setItem('pc_google_client_id', nid.trim()); }catch(e){} location.reload(); }
+      else if(nid!==null) alert('Client ID no válido');
+      return;
+    }
+    if(!initGoogle()){ setTimeout(function(){ try{ google.accounts.id.prompt(); }catch(e){ alert('No se pudo abrir Google Login. Recarga.'); } }, 300); } else { try{ google.accounts.id.prompt(); }catch(e){} }
+  });
+  connBtn.addEventListener('click', function(){
+    var prof=getProfile();
+    var n=prof?prof.name:(getName() || genName());
+    if(!prof && !getName()){
+      try{ localStorage.setItem('pc_social_name', n); }catch(e){}
+    } else if(!prof){
+      n=getName();
+    }
+    try{ localStorage.setItem('pc_social_connected','1'); }catch(e){}
     statusEl.textContent='Conectando como '+n+'…'; statusEl.style.color='var(--grn)';
     pushPeer(n,'online').then(()=>{ statusEl.textContent='Conectado como '+n+' ✓'; updateUI(); setTimeout(()=>{ try{ softRefresh(); }catch(e){ location.reload(); } }, 700); }).catch(e=>{ statusEl.textContent='Conectado local como '+n+' (reintenta)'; updateUI(); });
   });
   disBtn.addEventListener('click', function(){
-    var n=getName(); try{ localStorage.setItem('pc_social_connected','0'); }catch(e){}
+    var n=getName();
+    try{ localStorage.setItem('pc_social_connected','0'); }catch(e){}
     statusEl.textContent='Desconectado'; statusEl.style.color='var(--dim)'; updateUI();
     if(n) pushPeer(n,'offline').catch(()=>{});
   });
@@ -1274,11 +1334,16 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeInfo(
       if(!rows.length){ var tb1=document.getElementById('socialPeers'); if(tb1) tb1.innerHTML='<tr><td colspan=7 class="dim">nadie conectado aún — sé el primero en Conectar</td></tr>'; return; }
       function si(v){ var n=Number(v); return isFinite(n)?Math.floor(n):0; }
       function sf(v){ var n=Number(v); return isFinite(n)?n:0; }
+      var seen={}; var dedup=[]; rows.sort((a,b)=> String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
+      for(var di=0;di<rows.length;di++){ var k=(rows[di].google_sub||'').trim() || (rows[di].name||'').toLowerCase(); if(!seen[k]){ seen[k]=1; dedup.push(rows[di]); } }
+      rows=dedup;
       rows.sort((a,b)=> (a.status==='online'?0:1)-(b.status==='online'?0:1) || (si(b.tok_30d)||0)-(si(a.tok_30d)||0));
       var html='';
       for(var i=0;i<Math.min(20,rows.length);i++){
         var p=rows[i]; var ch=si(p.churn_30d), cs=sf(p.cost_30d); var eff=(ch? (cs/(ch/1000)).toFixed(2) : '—');
-        html+='<tr class="social-row" data-peer="'+String(p.name||'?').replace(/"/g,'&quot;')+'" style="cursor:pointer"><td><b>'+(p.name||'?')+'</b></td><td class="num">'+fmtTok(si(p.tok_today)||0)+'</td><td class="num">'+fmtTok(si(p.tok_30d)||0)+'</td><td class="num">'+(eff!=='—'?'$'+eff+'/k':eff)+'</td><td class="num">'+si(p.projects||0)+'</td><td><span class="pill '+(p.status==='online'?'grn':'dim')+'">'+(p.status||'offline')+'</span></td><td class="dim" style="font-size:11px">'+String(p.updated_at||'').slice(0,16).replace('T',' ')+'</td></tr>';
+        var dname=(p.display_name||p.name||'?'); var av=p.avatar_url||'';
+        var nameCell=av?'<span style="display:inline-flex;align-items:center;gap:6px"><img src="'+av.replace(/"/g,'&quot;')+'" style="width:22px;height:22px;border-radius:50%;border:1px solid #262c36"><b>'+dname.replace(/</g,'&lt;')+'</b></span>':'<b>'+dname.replace(/</g,'&lt;')+'</b>';
+        html+='<tr class="social-row" data-peer="'+String(p.name||dname||'?').replace(/"/g,'&quot;')+'" style="cursor:pointer"><td>'+nameCell+'</td><td class="num">'+fmtTok(si(p.tok_today)||0)+'</td><td class="num">'+fmtTok(si(p.tok_30d)||0)+'</td><td class="num">'+(eff!=='—'?'$'+eff+'/k':eff)+'</td><td class="num">'+si(p.projects||0)+'</td><td><span class="pill '+(p.status==='online'?'grn':'dim')+'">'+(p.status||'offline')+'</span></td><td class="dim" style="font-size:11px">'+String(p.updated_at||'').slice(0,16).replace('T',' ')+'</td></tr>';
       }
       var tb=document.getElementById('socialPeers'); if(tb) tb.innerHTML=html;
       var cnt=document.getElementById('socialCount'); if(cnt) cnt.textContent=rows.filter(r=>r.status==='online').length;
